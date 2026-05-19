@@ -522,27 +522,27 @@ def render_farmer_module(language="English", field_results=None):
         if method == "📝 Fill form":
             col1, col2 = st.columns(2)
             with col1:
-                name     = st.text_input("Name (optional)", placeholder="Anonymous")
-                province_sel = st.selectbox("Province", list(MARKET_DATABASE.keys()) + ["Kabul","Kandahar","Takhar","Baghlan","Badakhshan","Other"])
-                district = st.text_input("District")
-                village  = st.text_input("Village")
+                name     = st.text_input("Name (optional)", placeholder="Anonymous", key="profile_name")
+                province_sel = st.selectbox("Province", list(MARKET_DATABASE.keys()) + ["Kabul","Kandahar","Takhar","Baghlan","Badakhshan","Other"], key="profile_province")
+                district = st.text_input("District", key="profile_district")
+                village  = st.text_input("Village", key="profile_village")
             with col2:
-                land_unit = st.selectbox("Land unit", ["Jereb جریب","Hectare ha","Acre"])
-                land_size = st.number_input("Land size", min_value=0.1, value=2.0, step=0.5)
+                land_unit = st.selectbox("Land unit", ["Jereb جریب","Hectare ha","Acre"], key="profile_land_unit")
+                land_size = st.number_input("Land size", min_value=0.1, value=2.0, step=0.5, key="profile_land_size")
                 land_ha   = round(land_size * (0.2 if "Jereb" in land_unit else 0.4 if "Acre" in land_unit else 1), 2)
                 land_jereb= round(land_size * (1 if "Jereb" in land_unit else 5 if "Hectare" in land_unit else 2.5), 1)
                 st.caption(f"= {land_ha} ha = {land_jereb} jereb")
 
-                main_crop = st.selectbox("Main crop", list(SEED_DATABASE.keys()))
-                has_irr   = st.checkbox("Has irrigation")
-                has_mkt   = st.checkbox("Has market access")
+                main_crop = st.selectbox("Main crop", list(SEED_DATABASE.keys()), key="profile_main_crop")
+                has_irr   = st.checkbox("Has irrigation", key="profile_has_irr")
+                has_mkt   = st.checkbox("Has market access", key="profile_has_mkt")
 
             problems = st.multiselect("Problems faced", [
                 "Water shortage","Crop disease","Pests","No seeds",
                 "No fertilizer","Cannot sell crops","Flooding",
                 "Drought","No machinery","Soil problems","Other"
-            ])
-            wants = st.text_input("Wants to grow next season")
+            ], key="profile_problems")
+            wants = st.text_input("Wants to grow next season", key="profile_wants")
 
             if st.button("💾 Save Profile", type="primary", use_container_width=True):
                 st.session_state.farmer_profile = {
@@ -840,7 +840,7 @@ def render_farmer_module(language="English", field_results=None):
     with tabs[7]:
         st.subheader("📅 Crop Calendar — What to Do and When")
 
-        crop_sel = st.selectbox("Select your crop", list(CROP_CALENDAR.keys()))
+        crop_sel = st.selectbox("Select your crop", list(CROP_CALENDAR.keys()), key="calendar_crop_sel")
 
         if crop_sel in CROP_CALENDAR:
             ops = CROP_CALENDAR[crop_sel]["operations"]
@@ -868,7 +868,7 @@ def render_farmer_module(language="English", field_results=None):
             "🌾 My field", "🍂 Sick or yellow plant",
             "🌱 Seedlings", "💧 Irrigation system",
             "🌍 Soil", "📦 Harvest", "🐛 Pest or insect"
-        ])
+        ], key="photo_type_sel")
 
         uploaded = st.file_uploader(
             "Upload 1-3 photos (JPG or PNG)",
@@ -879,7 +879,8 @@ def render_farmer_module(language="English", field_results=None):
         extra = st.text_area(
             "Describe what you see (any language)",
             placeholder="e.g. The leaves are turning yellow since last week...",
-            height=80
+            height=80,
+            key="photo_extra_desc"
         )
 
         if uploaded and st.button("🔍 Analyse photos", type="primary", use_container_width=True):
@@ -943,12 +944,12 @@ Be specific. Respond in the language the farmer used in their description."""})
 
         col1, col2 = st.columns(2)
         with col1:
-            rec_type    = st.selectbox("Which recommendation?", ["Irrigation","Fertilizer","Crop selection","Seed","Market advice","Machinery","Weather alert","Other"])
-            worked      = st.radio("Did it work?", ["Yes ✅","Partly 🟡","No ❌"])
-            yield_change= st.select_slider("Yield change", ["Much worse","Worse","Same","Better","Much better"])
+            rec_type    = st.selectbox("Which recommendation?", ["Irrigation","Fertilizer","Crop selection","Seed","Market advice","Machinery","Weather alert","Other"], key="fb_rec_type")
+            worked      = st.radio("Did it work?", ["Yes ✅","Partly 🟡","No ❌"], key="fb_worked")
+            yield_change= st.select_slider("Yield change", ["Much worse","Worse","Same","Better","Much better"], key="fb_yield")
         with col2:
-            fb_text  = st.text_area("Tell us more (any language)", height=120)
-            rating   = st.slider("Overall rating", 1, 5, 4)
+            fb_text  = st.text_area("Tell us more (any language)", height=120, key="fb_text")
+            rating   = st.slider("Overall rating", 1, 5, 4, key="fb_rating")
 
         if st.button("📤 Submit Feedback", type="primary", use_container_width=True):
             if "feedback_db" not in st.session_state:
