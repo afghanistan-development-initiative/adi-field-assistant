@@ -46,6 +46,67 @@ def health():
     return jsonify({"status":"ok","gee":GEE_OK,
                     "ai":"gemini" if GEMINI_KEY else "anthropic" if ANTHROPIC_KEY else "none"})
 
+@app.route("/ndvi_tile", methods=["POST","OPTIONS"])
+def ndvi_tile():
+    """Returns NDVI heatmap tile URL for a field polygon"""
+    if request.method=="OPTIONS": return jsonify({}), 200
+    if not GEE_OK: return jsonify({"status":"error"}), 503
+    try:
+        data   = request.get_json(force=True)
+        coords = data.get("coords",[])
+        if len(coords)<3: return jsonify({"status":"error"}), 400
+
+        gee_coords = [[float(c[1]),float(c[0])] for c in coords]
+        region = ee.Geometry.Polygon([gee_coords])
+
+        today    = dt.datetime.now()
+        end_date = today.strftime("%Y-%m-%d")
+        start_90 = (today - dt.timedelta(days=90)).strftime("%Y-%m-%d")
+
+        # Get latest S2
+        col = (ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+               .filterBounds(region)
+               .filterDate(start_90, end_date)
+               .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 20))
+               .sort("system:time_start", False))
+
+        if col.size().getInfo() == 0:
+            col = (ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+                   .filterBounds(region)
+                   .filterDate(f"{today.year}-01-01", end_date)
+                   .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 25))
+                   .sort("system:time_start", False))
+
+        s2   = col.median().clip(region)
+        ndvi = s2.normalizedDifference(["B8","B4"])
+
+        # NDVI visualization - exactly like your examples
+        # Red=stressed, Yellow=moderate, Green=healthy
+        vis = {
+            "min": 0.0,
+            "max": 0.6,
+            "palette": [
+                "#d73027",  # 0.0 - deep red (bare/very stressed)
+                "#f46d43",  # 0.1 - orange red
+                "#fdae61",  # 0.2 - orange
+                "#fee08b",  # 0.25 - yellow
+                "#d9ef8b",  # 0.3 - yellow green
+                "#a6d96a",  # 0.4 - light green
+                "#66bd63",  # 0.5 - green
+                "#1a9850",  # 0.6 - dark green (excellent)
+            ]
+        }
+        map_id = ndvi.getMapId(vis)
+        tile_url = map_id["tile_fetcher"].url_format
+
+        return jsonify({
+            "status":   "success",
+            "tile_url": tile_url,
+        })
+
+    except Exception as e:
+        return jsonify({"status":"error","message":str(e)}), 500
+
 @app.route("/analyse", methods=["POST","OPTIONS"])
 def analyse():
     if request.method=="OPTIONS": return jsonify({}), 200
