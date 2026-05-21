@@ -269,47 +269,32 @@ footer{padding:3rem 5rem;border-top:1px solid var(--br);display:flex;justify-con
   .pa,.fg,.vision-grid,.lg2,.steps,.sdgg,.stats-r{grid-template-columns:1fr;}
 }
 
-/* APP LAUNCHER MODAL */
-.modal-overlay{position:fixed;inset:0;background:rgba(5,46,22,0.75);backdrop-filter:blur(8px);z-index:1000;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity 0.3s;}
-.modal-overlay.open{opacity:1;pointer-events:all;}
-.modal{background:white;border-radius:20px;padding:2.5rem;width:90%;max-width:480px;transform:translateY(20px);transition:transform 0.3s;box-shadow:0 24px 64px rgba(0,0,0,0.15);}
-.modal-overlay.open .modal{transform:translateY(0);}
-.modal-logo{font-family:var(--D);font-size:36px;color:var(--g);margin-bottom:0.5rem;}
-.modal-tag{font-family:var(--M);font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--m2);margin-bottom:2rem;}
-.modal-options{display:flex;flex-direction:column;gap:10px;margin-bottom:1.5rem;}
-.modal-btn{display:flex;align-items:center;gap:1rem;padding:1rem 1.25rem;border:1.5px solid var(--br);border-radius:12px;background:var(--bg);cursor:pointer;transition:all 0.2s;text-decoration:none;}
-.modal-btn:hover{border-color:var(--g);background:var(--gb);transform:translateX(4px);}
-.modal-btn-ico{font-size:24px;width:40px;text-align:center;flex-shrink:0;}
-.modal-btn-t{font-size:14px;font-weight:500;color:var(--t);}
-.modal-btn-s{font-family:var(--M);font-size:11px;color:var(--m2);margin-top:2px;}
-.modal-close{width:100%;padding:10px;background:transparent;border:1px solid var(--br);border-radius:8px;font-family:var(--M);font-size:12px;color:var(--m2);cursor:pointer;transition:all 0.2s;}
-.modal-close:hover{border-color:var(--g);color:var(--g);}
+/* APP OVERLAY */
+.app-overlay{position:fixed;inset:0;z-index:1000;background:var(--bg);display:flex;flex-direction:column;opacity:0;pointer-events:none;transition:opacity 0.35s;}
+.app-overlay.open{opacity:1;pointer-events:all;}
+.app-overlay-nav{display:flex;align-items:center;justify-content:space-between;padding:0.75rem 1.5rem;background:white;border-bottom:1px solid var(--br);flex-shrink:0;}
+.app-overlay-logo{font-family:var(--D);font-size:24px;color:var(--g);}
+.app-overlay-close{font-family:var(--M);font-size:12px;padding:7px 16px;background:var(--bg);border:1px solid var(--br);border-radius:20px;cursor:pointer;color:var(--m);transition:all 0.2s;display:flex;align-items:center;gap:6px;}
+.app-overlay-close:hover{border-color:var(--g);color:var(--g);}
+.app-iframe{flex:1;border:none;width:100%;height:100%;}
 </style>
 </head>
 <body>
 
 
-<!-- APP LAUNCHER MODAL -->
-<div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
-  <div class="modal">
-    <div class="modal-logo">ZaminAI</div>
-    <div class="modal-tag">🌱 Smart Farming Intelligence · Worldwide</div>
-    <div class="modal-options">
-      <a href="https://zaminai.org/app.html" target="_blank" class="modal-btn" onclick="closeModalDirect()">
-        <div class="modal-btn-ico">🛰️</div>
-        <div><div class="modal-btn-t">Open ZaminAI App</div><div class="modal-btn-s">Full platform · satellite data · AI assistant · free</div></div>
-      </a>
-      <a href="https://zaminai.org/app.html" target="_blank" class="modal-btn" onclick="closeModalDirect()">
-        <div class="modal-btn-ico">📱</div>
-        <div><div class="modal-btn-t">Open on mobile</div><div class="modal-btn-s">Works on any smartphone · GPS · voice · Dari · Pashto</div></div>
-      </a>
-      <a href="mailto:m.alamzoi123@gmail.com" class="modal-btn">
-        <div class="modal-btn-ico">✉️</div>
-        <div><div class="modal-btn-t">Contact us</div><div class="modal-btn-s">Partnership · research · NGO collaboration</div></div>
-      </a>
-    </div>
-    <button class="modal-close" onclick="closeModalBtn()">← Back to ZaminAI</button>
+<!-- APP OVERLAY - opens app inside same page -->
+<div class="app-overlay" id="appOverlay">
+  <div class="app-overlay-nav">
+    <div class="app-overlay-logo">🌱 ZaminAI</div>
+    <button class="app-overlay-close" onclick="closeAppOverlay()">✕ Close</button>
   </div>
+  <iframe 
+    id="appFrame"
+    class="app-iframe"
+    src=""
+    title="ZaminAI Smart Farming App"
+    allow="geolocation; microphone; camera"
+  ></iframe>
 </div>
 
 <div id="cur"></div>
@@ -1428,10 +1413,25 @@ function calc(){
 
 upd();
 
-function openModal(e){if(e)e.preventDefault();document.getElementById('modalOverlay').classList.add('open');}
-function closeModalBtn(){document.getElementById('modalOverlay').classList.remove('open');}
-function closeModal(e){if(e.target===document.getElementById('modalOverlay'))document.getElementById('modalOverlay').classList.remove('open');}
-function closeModalDirect(){setTimeout(()=>document.getElementById('modalOverlay').classList.remove('open'),300);}
+function openModal(e){
+  if(e) e.preventDefault();
+  const overlay = document.getElementById('appOverlay');
+  const frame = document.getElementById('appFrame');
+  // Load app into iframe
+  if(!frame.src || frame.src==='about:blank' || frame.src===''){
+    frame.src = 'https://afghanistan-development-initiative.github.io/zaminai/app.html';
+  }
+  overlay.classList.add('open');
+  document.body.style.overflow='hidden';
+}
+function closeAppOverlay(){
+  document.getElementById('appOverlay').classList.remove('open');
+  document.body.style.overflow='';
+}
+// Keep old names for compatibility
+function closeModalBtn(){closeAppOverlay();}
+function closeModal(e){closeAppOverlay();}
+function closeModalDirect(){closeAppOverlay();}
 
 </script>
 </body>
