@@ -2078,9 +2078,10 @@ async function analyseField(){
     updateAIContext(za_fieldData);
     
     // Render NDVI heatmap of drawn field
-    setTimeout(async ()=>{
-      const miniDiv = document.getElementById('fieldMiniMap');
-      if(!miniDiv || za_points.length < 3) return;
+    await new Promise(r => requestAnimationFrame(r));
+    await new Promise(r => requestAnimationFrame(r));
+    miniDiv.innerHTML = '';       // clear old Leaflet instance
+    miniDiv._leaflet_id = null;   // reset Leaflet ID
 
       // Destroy previous mini map if exists
       if(window._miniMap){ window._miniMap.remove(); window._miniMap=null; }
