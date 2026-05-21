@@ -494,7 +494,7 @@ html,body{height:100%;overflow:hidden;background:var(--bg);font-family:var(--B);
 <!-- APP OVERLAY - embedded directly -->
 <div class="app-overlay" id="appOverlay">
   <div class="app-overlay-nav">
-    <div class="app-overlay-logo">🌱 ZaminAI</div>
+    <div class="app-overlay-logo" onclick="closeAppOverlay()" style="cursor:pointer;user-select:none;" title="Back to ZaminAI">🌱 ZaminAI</div>
     <div style="display:flex;gap:6px;">
       <button class="lang-btn on" onclick="setLang('en',this)" id="app-lang-en">EN</button>
       <button class="lang-btn" onclick="setLang('fa',this)" id="app-lang-fa">دری</button>
@@ -502,12 +502,12 @@ html,body{height:100%;overflow:hidden;background:var(--bg);font-family:var(--B);
     </div>
     <button class="app-overlay-close" onclick="closeAppOverlay()">✕ Close</button>
   </div>
-  <div id="zaminai-app-container" style="position:relative;width:100%;height:100%;overflow:hidden;flex:1;">
+  <div id="zaminai-app-container" style="position:relative;width:100%;height:100%;overflow:hidden;flex:1;min-height:0;">
     
 
 <!-- NAV -->
 <nav class="nav" style="display:none">
-  <div class="logo"><span class="logo-dot"></span>ZaminAI</div>
+  <div class="logo" onclick="window.scrollTo({top:0,behavior:'smooth'})" style="cursor:pointer;"><span class="logo-dot"></span>ZaminAI</div>
   <div class="nav-center">
     <button class="lang-btn on" onclick="setLang('en',this)">EN</button>
     <button class="lang-btn" onclick="setLang('fa',this)">دری</button>
@@ -1999,11 +1999,35 @@ async function analyseField(){
   const crop    = document.getElementById('cropType')?.value||'wheat';
   const year    = 2024;
 
-  // Satellite values (replace with real GEE API call)
-  const ndvi  = 0.3278;
-  const mndwi = -0.1431;
-  const rain  = 287;
-  const trend = {2019:0.48,2020:0.41,2021:0.35,2022:0.22,2023:0.29,2024:ndvi};
+  // ── REAL GEE API CALL ────────────────────────────────────────────────
+  const API_URL = 'https://zaminai-api.onrender.com';
+  let ndvi=0.32, mndwi=-0.14, rain=250, imageDate='';
+  let trend={2019:0.48,2020:0.41,2021:0.35,2022:0.22,2023:0.29,2024:0.32};
+
+  try {
+    const apiResp = await Promise.race([
+      fetch(`${API_URL}/analyse`, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({coords:za_points.map(p=>[p[0],p[1]]),year:2024})
+      }),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),25000))
+    ]);
+    if(apiResp.ok){
+      const d = await apiResp.json();
+      if(d.status==='success'){
+        ndvi=d.ndvi; mndwi=d.mndwi; rain=d.rain_mm;
+        trend=d.ndvi_trend; imageDate=d.image_date||'';
+        console.log('✓ Real satellite data:', d);
+      }
+    }
+  } catch(err){
+    console.warn('API not reachable — using location estimate:', err.message);
+    const lat=centroid[0], lon=centroid[1];
+    ndvi  = lat>36?0.38:lat>33?0.28:0.22;
+    mndwi = lon>69?-0.10:-0.18;
+    rain  = lat>35?320:lat>32?250:180;
+  }
 
   za_fieldData={ndvi,mndwi,rain_mm:rain,area_ha:areaHa,area_jereb:areaJ,
     lat:centroid[0].toFixed(5),lon:centroid[1].toFixed(5),
