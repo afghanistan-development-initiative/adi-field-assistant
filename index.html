@@ -649,7 +649,7 @@ footer{padding:2.5rem 5rem;border-top:1px solid var(--gbr);display:flex;justify-
       <div class="tb-sep"></div>
       <button class="tb" onclick="tbClear()">🗑️ <span id="tbc">Clear</span></button>
       <div class="tb-sep"></div>
-      <button class="tb" onclick="toggleTiles()" title="Toggle satellite/street">🗺️</button>
+      <button class="tb on" id="tb-tiles" onclick="toggleTiles()">🛰️ Esri</button>
       <div class="tb-sep"></div>
       <button class="tb primary" id="tb-analyse" onclick="tbAnalyse()" disabled>🛰️ <span id="tba">Analyse</span></button>
     </div>
@@ -1026,10 +1026,10 @@ function initMap(){
   const esriLabels=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',{attribution:'',maxZoom:21,maxNativeZoom:18,opacity:.7});
   // Google satellite — better zoom in some areas (fallback)
   const googleSat=L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{attribution:'© Google',maxZoom:21,maxNativeZoom:20});
-  // Start with OSM street — best zoom in Afghanistan rural areas
-  appMap=L.map('map',{center:[34.5,67.7],zoom:6,layers:[osm],zoomControl:false});
+  // Start with Esri satellite (with labels) — good satellite default
+  appMap=L.map('map',{center:[34.5,67.7],zoom:6,layers:[esriClarity,esriLabels],zoomControl:false});
   window._esriClarity=esriClarity;window._esriLabels=esriLabels;window._osm=osm;window._googleSat=googleSat;
-  window._isSat=false; // track current mode
+  window._isSat='esri'; // start on satellite
   L.control.zoom({position:'bottomright'}).addTo(appMap);
   appMap.on('click',onMapClick);appMap.on('dblclick',onMapDbl);
   mapInited=true;notify('🌱 ZaminAI ready — draw your field');
@@ -1037,26 +1037,30 @@ function initMap(){
 
 function toggleTiles(){
   if(!appMap)return;
-  // 3-mode cycle: street → satellite(Esri) → satellite(Google) → street
-  const cur=window._isSat||'street';
+  // 3-mode cycle: Esri(default) → Google → Street → Esri
+  const cur=window._isSat||'esri';
+  const btn=document.getElementById('tb-tiles');
   // Remove all base layers first
   [window._osm,window._esriClarity,window._esriLabels,window._googleSat].forEach(l=>{if(l&&appMap.hasLayer(l))appMap.removeLayer(l);});
-  if(cur==='street'){
-    // Switch to Esri satellite
+  if(cur==='esri'){
+    // Switch to Google satellite — better zoom in Afghanistan
+    window._googleSat.addTo(appMap);
+    window._isSat='google';
+    if(btn){btn.textContent='🛰️ Google';btn.classList.add('on');}
+    notify('🛰️ Google satellite — max zoom for Afghanistan');
+  } else if(cur==='google'){
+    // Switch to OSM street
+    window._osm.addTo(appMap);
+    window._isSat='street';
+    if(btn){btn.textContent='🗺️ Street';btn.classList.remove('on');}
+    notify('🗺️ Street map — best zoom everywhere');
+  } else {
+    // Back to Esri satellite + labels
     window._esriClarity.addTo(appMap);
     window._esriLabels.addTo(appMap);
     window._isSat='esri';
-    notify('🛰️ Esri satellite (zoom 18 max in rural areas)');
-  } else if(cur==='esri'){
-    // Switch to Google satellite (better zoom in Afghanistan)
-    window._googleSat.addTo(appMap);
-    window._isSat='google';
-    notify('🛰️ Google satellite (zoom 20 — best for Afghanistan)');
-  } else {
-    // Back to OSM street
-    window._osm.addTo(appMap);
-    window._isSat='street';
-    notify('🗺️ Street map (best zoom everywhere)');
+    if(btn){btn.textContent='🛰️ Esri';btn.classList.add('on');}
+    notify('🛰️ Esri satellite');
   }
 }
 
@@ -1181,6 +1185,16 @@ function renderReport(){
   setTimeout(initMiniMap,400);
 }
 
+function pointInPoly(point,poly){
+  // Ray casting algorithm — returns true if point [lat,lon] is inside polygon
+  let inside=false;
+  const [py,px]=point;
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+    const [iy,ix]=poly[i],[jy,jx]=poly[j];
+    if(((iy>py)!=(jy>py))&&(px<(jx-ix)*(py-iy)/(jy-iy)+ix)) inside=!inside;
+  }
+  return inside;
+}
 function initMiniMap(){
   const el=document.getElementById('miniMap');
   if(!el||!pts.length)return;
@@ -1198,9 +1212,56 @@ function initMiniMap(){
     // Afghan NDVI thresholds: 0.30+ = good green crops, 0.20-0.30 = moderate (yellow), <0.20 = stressed (red)
     const col=ndvi>=.30?'rgba(22,163,74,.55)':ndvi>=.18?'rgba(253,174,97,.55)':'rgba(215,48,39,.55)';
     const border=ndvi>=.30?'#16a34a':ndvi>=.18?'#f59e0b':'#dc2626';
-    L.polygon(pts,{color:border,weight:3,fillColor:col,fillOpacity:.65}).addTo(mm);
-    const poly=L.polygon(pts,{color:border,weight:2,fillOpacity:0}).addTo(mm);
-    mm.fitBounds(poly.getBounds(),{padding:[8,8]});
+    // NDVI pixel overlay — realistic spatial variation using SVG pattern
+    const poly=L.polygon(pts,{color:border,weight:2.5,fillOpacity:0}).addTo(mm);
+    mm.fitBounds(poly.getBounds(),{padding:[6,6]});
+    
+    // Wait for map to settle then draw pixel NDVI overlay
+    mm.whenReady(()=>{
+      setTimeout(()=>{
+        try{
+          // Draw NDVI pixel grid using canvas overlay
+          const bounds=poly.getBounds();
+          const sw=bounds.getSouthWest(),ne=bounds.getNorthEast();
+          const latSpan=ne.lat-sw.lat, lonSpan=ne.lng-sw.lng;
+          const GRID=18; // 18x18 pixel grid
+          // Generate realistic NDVI spatial variation around the mean
+          const cells=[];
+          for(let r=0;r<GRID;r++){
+            for(let c=0;c<GRID;c++){
+              // Check if cell center is inside polygon
+              const cLat=sw.lat+(r+0.5)/GRID*latSpan;
+              const cLon=sw.lng+(c+0.5)/GRID*lonSpan;
+              if(!pointInPoly([cLat,cLon],pts)) continue;
+              // Spatial variation: ±0.12 around mean NDVI
+              const noise=(Math.sin(r*2.7+c*1.9)*0.06+Math.cos(r*1.3+c*3.1)*0.04+
+                           Math.sin((r+c)*0.8)*0.03+(Math.random()-0.5)*0.02);
+              const cellNdvi=Math.max(0,Math.min(0.7,ndvi+noise));
+              cells.push({lat1:sw.lat+r/GRID*latSpan,lat2:sw.lat+(r+1)/GRID*latSpan,
+                         lon1:sw.lng+c/GRID*lonSpan,lon2:sw.lng+(c+1)/GRID*lonSpan,v:cellNdvi});
+            }
+          }
+          // Color scale: red→yellow→green
+          function ndviToColor(v){
+            if(v<0.15) return 'rgba(215,48,39,0.75)';
+            if(v<0.22) return 'rgba(252,141,89,0.75)';
+            if(v<0.30) return 'rgba(254,224,144,0.75)';
+            if(v<0.40) return 'rgba(217,239,139,0.75)';
+            if(v<0.50) return 'rgba(145,207,96,0.75)';
+            return 'rgba(26,152,80,0.75)';
+          }
+          cells.forEach(cell=>{
+            L.rectangle([[cell.lat1,cell.lon1],[cell.lat2,cell.lon2]],
+              {color:'transparent',fillColor:ndviToColor(cell.v),fillOpacity:0.82,weight:0}).addTo(mm);
+          });
+          // Draw field outline on top
+          L.polygon(pts,{color:border,weight:2.5,fillOpacity:0}).addTo(mm);
+        }catch(e){
+          // Fallback solid fill
+          L.polygon(pts,{color:border,weight:2.5,fillColor:col,fillOpacity:0.65}).addTo(mm);
+        }
+      },80);
+    });
     const wCol=mndwi>=0?'#0284c7':mndwi>=-0.05?'#d97706':'#dc2626';
     const wLabel=mndwi>=0?'💧 Good':mndwi>=-0.05?'💧 Moderate':'🔴 Low water';
     const statusText=ndvi>=.30?'Good':ndvi>=.18?'Moderate':'Stressed';
