@@ -2076,6 +2076,38 @@ async function analyseField(){
     renderReport(za_fieldData);
     saveField(za_fieldData);
     updateAIContext(za_fieldData);
+    
+    // Render mini satellite map of the drawn field
+    setTimeout(()=>{
+      const miniDiv = document.getElementById('fieldMiniMap');
+      if(miniDiv && za_points.length >= 3){
+        // Create a small Leaflet map showing the field
+        const miniMap = L.map('fieldMiniMap', {
+          zoomControl:false, dragging:false, scrollWheelZoom:false,
+          doubleClickZoom:false, boxZoom:false, keyboard:false,
+          attributionControl:false
+        });
+        // Satellite tiles
+        L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+          {maxZoom:20}).addTo(miniMap);
+        // Draw the field polygon
+        const miniPoly = L.polygon(za_points, {
+          color:'#4ade80', weight:2.5,
+          fillColor:'#4ade80', fillOpacity:0.2
+        }).addTo(miniMap);
+        // Fit map to field bounds
+        miniMap.fitBounds(miniPoly.getBounds(), {padding:[10,10]});
+        // Add NDVI color overlay
+        const ndviColor = za_fieldData.ndvi>=0.35?'#16a34a':
+                          za_fieldData.ndvi>=0.15?'#f59e0b':'#dc2626';
+        // Add NDVI badge on map
+        const badge = L.divIcon({
+          html:`<div style="background:${ndviColor};color:white;padding:3px 8px;border-radius:10px;font-family:monospace;font-size:11px;font-weight:bold;white-space:nowrap;">NDVI ${za_fieldData.ndvi}</div>`,
+          className:'', iconAnchor:[0,0]
+        });
+        L.marker(miniPoly.getBounds().getCenter(), {icon:badge}).addTo(miniMap);
+      }
+    }, 200);
   } catch(err) {
     console.error('Report render error:', err);
     document.getElementById('reportBody').innerHTML = `
@@ -2189,6 +2221,12 @@ function renderReport(r){
 
   document.getElementById('reportBody').innerHTML=`
     <div class="save-badge" id="saveBadge"><span class="spin" style="border-color:rgba(22,163,74,0.3);border-top-color:var(--g)"></span> ${T.saving}</div>
+
+    <!-- Mini satellite map of drawn field -->
+    <div class="rep-section">
+      <div class="rep-title">📍 Your field</div>
+      <div id="fieldMiniMap" style="height:160px;border-radius:8px;overflow:hidden;border:1px solid var(--br);"></div>
+    </div>
 
     <div class="rep-section">
       <div class="rep-title">${T.what_satellite}</div>
