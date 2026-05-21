@@ -49,6 +49,122 @@ div[data-testid="metric-container"]{background:#111810;border:1px solid #1e2b1a;
 # ─── GEE INIT ────────────────────────────────────────────────────────────────
 @st.cache_resource
 def init_gee():
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ZaminAI SATELLITE API — called from zaminai.org HTML app
+# URL: https://zaminai.streamlit.app/?api=analyse&coords=...&year=2024
+# ══════════════════════════════════════════════════════════════════════════════
+
+import json
+import datetime as dt
+
+def handle_api_request():
+    """Handle API requests from the HTML app via query parameters."""
+    params = st.query_params
+    
+    # Check if this is an API request
+    if params.get("api") != "analyse":
+        return False
+    
+    # Set CORS headers via meta tag (Streamlit limitation)
+    st.markdown("""
+    <meta http-equiv="Access-Control-Allow-Origin" content="*">
+    """, unsafe_allow_html=True)
+    
+    try:
+        coords_str = params.get("coords", "")
+        year = int(params.get("year", 2024))
+        
+        if not coords_str:
+            st.json({"status": "error", "message": "No coordinates"})
+            return True
+        
+        # Parse coords [[lat,lon],...]
+        coords = json.loads(coords_str)
+        
+        if len(coords) < 3:
+            st.json({"status": "error", "message": "Need 3+ coordinates"})
+            return True
+        
+        # Convert [lat,lon] to GEE [lon,lat]
+        gee_coords = [[c[1], c[0]] for c in coords]
+        region = ee.Geometry.Polygon([gee_coords])
+        
+        # Sentinel-2
+        s2 = (ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+              .filterBounds(region)
+              .filterDate(f"{year}-04-01", f"{year}-08-31")
+              .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 15))
+              .median().clip(region))
+        
+        ndvi  = s2.normalizedDifference(["B8","B4"]).rename("NDVI")
+        mndwi = s2.normalizedDifference(["B3","B11"]).rename("MNDWI")
+        
+        def mean(img, band, scale=30):
+            v = img.select(band).reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=region, scale=scale, maxPixels=1e9
+            ).getInfo()
+            return round((v or {}).get(band, 0) or 0, 4)
+        
+        ndvi_val  = mean(ndvi, "NDVI")
+        mndwi_val = mean(mndwi, "MNDWI")
+        
+        # Rainfall
+        rain = (ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY")
+                .filterBounds(region)
+                .filterDate(f"{year}-01-01", f"{year}-12-31")
+                .select("precipitation").sum().clip(region))
+        rain_val = mean(rain, "precipitation", 5000)
+        
+        # Area
+        area_ha = round(region.area().getInfo() / 10000, 2)
+        centroid = region.centroid().coordinates().getInfo()
+        
+        # NDVI trend
+        trend = {}
+        for yr in range(2019, min(year+1, dt.datetime.now().year+1)):
+            try:
+                s2yr = (ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+                        .filterBounds(region)
+                        .filterDate(f"{yr}-05-01", f"{yr}-07-31")
+                        .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE",20))
+                        .median().clip(region))
+                v = s2yr.normalizedDifference(["B8","B4"]).reduceRegion(
+                    reducer=ee.Reducer.mean(),
+                    geometry=region, scale=30, maxPixels=1e9
+                ).getInfo()
+                trend[yr] = round((v or {}).get("nd", 0) or 0, 4)
+            except:
+                trend[yr] = 0.0
+        
+        result = {
+            "status":     "success",
+            "ndvi":       ndvi_val,
+            "mndwi":      mndwi_val,
+            "rain_mm":    round(rain_val, 1),
+            "area_ha":    area_ha,
+            "area_jereb": round(area_ha * 5, 1),
+            "lat":        round(centroid[1], 6),
+            "lon":        round(centroid[0], 6),
+            "ndvi_trend": trend,
+            "year":       year,
+            "image_date": f"{year}-07-01",
+        }
+        
+        # Return as JSON displayed as code (Streamlit limitation)
+        st.code(json.dumps(result), language="json")
+        return True
+        
+    except Exception as e:
+        st.json({"status": "error", "message": str(e)})
+        return True
+
+# Run API handler first — if it handles request, stop here
+if handle_api_request():
+    st.stop()
+
     try:
         service_account = st.secrets["gee"]["service_account"]
         private_key     = st.secrets["gee"]["private_key"]
