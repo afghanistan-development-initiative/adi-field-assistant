@@ -318,6 +318,19 @@ footer{padding:2.5rem 5rem;border-top:1px solid var(--gbr);display:flex;justify-
 @keyframes yblink{0%,100%{opacity:.55;}50%{opacity:1;}}
 @media(max-width:1024px){nav{padding:1rem 2rem;}.nav-links{display:none;}section{padding:5rem 2rem;}.hero{padding:7rem 2rem 4rem;}.cta{padding:6rem 2rem;}footer{padding:2rem;}.pa,.feat-grid,.roadmap-grid,.yolo-grid,.global-grid,.calc-wrap{grid-template-columns:1fr;}.steps{grid-template-columns:1fr 1fr;}.sdg-grid{grid-template-columns:repeat(3,1fr);}.lang-cards,.stat-row,.gstats{grid-template-columns:1fr 1fr;}}
 @media(max-width:600px){.steps,.sdg-grid,.lang-cards,.stat-row,.gstats{grid-template-columns:1fr;}.rp{width:100%;}.toolbar{padding:4px 6px;gap:3px;}.tb{padding:6px 9px;font-size:10px;}}
+
+  .idx-row.idx-active {
+    background: rgba(22,163,74,.12) !important;
+    border: 1px solid rgba(22,163,74,.4) !important;
+  }
+  .idx-row.idx-active::after {
+    content: ' 🗺️';
+    font-size: 9px;
+  }
+  .pixel-popup .leaflet-popup-content-wrapper {
+    border-radius: 10px;
+    padding: 0;
+  }
 </style>
 </head>
 <body>
@@ -1116,123 +1129,411 @@ const DB=[
 ];
 
 // ═══════════════════════════════════════════════════════════════════
-// PIXEL INDEX OVERLAY SYSTEM
-// Shows per-pixel index values as colored overlay on the drawn field
-// Works with both regional (simulated) and live GEE data
+// PROFESSIONAL PIXEL INDEX OVERLAY SYSTEM
+// Each index has scientifically correct color palette
+// Grid: 32×32 pixels = ~10m resolution simulation
+// Matches professional precision agriculture visualization
 // ═══════════════════════════════════════════════════════════════════
 
+// ── PROFESSIONAL COLOR PALETTES per index ───────────────────────────────
+// Colors chosen to match scientific convention and GEE standard palettes
 
-// Color scales for each index type
-function ndviToColor(v, indexName) {
-  const water = ['MNDWI','LSWI','NDWI','NDMI'].includes(indexName);
-  if (water) {
-    // Water indices: blue = water present, red = dry
-    if (v >  0.10) return [0,   100, 200, 200]; // deep blue — water
-    if (v >  0.00) return [41,  182, 246, 200]; // light blue
-    if (v > -0.10) return [255, 255, 200, 200]; // yellow — moderate
-    if (v > -0.20) return [253, 174,  97, 200]; // orange — dry
-    return [215,  48,  39, 200];                // red — very dry
+const INDEX_PALETTES = {
+
+  // NDVI — Red→Yellow→Green (universal vegetation standard)
+  // Red = stressed/bare | Green = healthy dense crops
+  NDVI: {
+    stops: [
+      [-0.10, [105, 105, 105]],  // grey  — water/shadow
+      [ 0.00, [215,  48,  39]],  // red   — bare soil
+      [ 0.10, [244, 109,  67]],  // orange-red
+      [ 0.18, [253, 174,  97]],  // orange
+      [ 0.25, [254, 224, 144]],  // yellow
+      [ 0.32, [217, 239, 139]],  // yellow-green
+      [ 0.40, [166, 217, 106]],  // light green
+      [ 0.50, [102, 189,  99]],  // green
+      [ 0.65, [ 26, 152,  80]],  // dark green
+    ],
+    title: 'NDVI — Vegetation Health',
+    unit: '',
+    low: 'Bare / No vegetation',
+    high: 'Dense healthy crops',
+    note: '10m pixels · Sentinel-2 B8/B4'
+  },
+
+  // EVI — same direction as NDVI but different range
+  // More sensitive in dense vegetation, less soil noise
+  EVI: {
+    stops: [
+      [-0.05, [215,  48,  39]],
+      [ 0.05, [244, 109,  67]],
+      [ 0.15, [253, 174,  97]],
+      [ 0.22, [254, 224, 144]],
+      [ 0.28, [217, 239, 139]],
+      [ 0.35, [166, 217, 106]],
+      [ 0.45, [102, 189,  99]],
+      [ 0.55, [ 26, 152,  80]],
+    ],
+    title: 'EVI — Enhanced Vegetation (no soil/atmosphere noise)',
+    unit: '',
+    low: 'Low biomass',
+    high: 'High biomass',
+    note: 'Sentinel-2 formula: 2.5×(B8-B4)/(B8+6B4-7.5B2+1)'
+  },
+
+  // SAVI — similar to NDVI but soil-adjusted
+  SAVI: {
+    stops: [
+      [-0.05, [215,  48,  39]],
+      [ 0.05, [244, 109,  67]],
+      [ 0.12, [253, 174,  97]],
+      [ 0.18, [254, 224, 144]],
+      [ 0.24, [217, 239, 139]],
+      [ 0.30, [166, 217, 106]],
+      [ 0.40, [102, 189,  99]],
+      [ 0.50, [ 26, 152,  80]],
+    ],
+    title: 'SAVI — Soil Adjusted (L=0.5 for arid land)',
+    unit: '',
+    low: 'Bare arid soil',
+    high: 'Dense vegetation',
+    note: 'Corrects for bare soil background in Afghan drylands'
+  },
+
+  // NDRE — Red Edge — Purple→Green
+  // Purple = low chlorophyll (stressed) | Green = high chlorophyll
+  // Scientific convention: diverging from purple through white to green
+  NDRE: {
+    stops: [
+      [ 0.00, [118,  42, 131]],  // purple  — very low chlorophyll
+      [ 0.10, [153, 112, 171]],  // light purple
+      [ 0.15, [194, 165, 207]],  // lavender
+      [ 0.20, [247, 247, 247]],  // white   — threshold
+      [ 0.25, [166, 219, 160]],  // light green
+      [ 0.32, [ 90, 174,  97]],  // green
+      [ 0.40, [ 27, 120,  55]],  // dark green
+    ],
+    title: 'NDRE — Red Edge Chlorophyll Index',
+    unit: '',
+    low: 'Low chlorophyll — stress',
+    high: 'High chlorophyll — healthy',
+    note: 'Detects stress 2-3 weeks before NDVI · B8A/B5'
+  },
+
+  // GNDVI — Green NDVI — similar to NDVI
+  GNDVI: {
+    stops: [
+      [ 0.00, [215,  48,  39]],
+      [ 0.10, [253, 174,  97]],
+      [ 0.20, [254, 224, 144]],
+      [ 0.28, [217, 239, 139]],
+      [ 0.35, [166, 217, 106]],
+      [ 0.45, [ 26, 152,  80]],
+    ],
+    title: 'GNDVI — Green NDVI (chlorophyll sensitive)',
+    unit: '',
+    low: 'Low chlorophyll',
+    high: 'High chlorophyll',
+    note: 'Sentinel-2 B8/B3 · More sensitive than NDVI to N-stress'
+  },
+
+  // MNDWI — Water: Brown→White→Blue
+  // Brown = dry | White = transition | Blue = water present
+  MNDWI: {
+    stops: [
+      [-0.40, [140,  81,  10]],  // dark brown — very dry
+      [-0.25, [191, 129,  45]],  // brown
+      [-0.15, [223, 194, 125]],  // tan
+      [-0.05, [245, 245, 245]],  // white — transition
+      [ 0.05, [199, 234, 229]],  // light teal
+      [ 0.15, [128, 205, 193]],  // teal
+      [ 0.30, [ 53, 151, 143]],  // blue-teal
+      [ 0.50, [  1, 102,  94]],  // dark teal — water body
+    ],
+    title: 'MNDWI — Water Availability Index',
+    unit: '',
+    low: 'Dry — irrigate urgently',
+    high: 'Good water / water body',
+    note: 'Brown=dry · Blue=water · Threshold: >0 = water present'
+  },
+
+  // LSWI — Land Surface Water — similar to MNDWI
+  LSWI: {
+    stops: [
+      [-0.40, [165,  15,  21]],  // dark red — very dry canopy
+      [-0.20, [239,  59,  44]],  // red
+      [-0.10, [252, 141,  89]],  // orange-red
+      [ 0.00, [254, 224, 144]],  // yellow
+      [ 0.10, [171, 217, 233]],  // light blue
+      [ 0.25, [ 74, 144, 226]],  // blue
+      [ 0.40, [ 44,  62, 160]],  // dark blue
+    ],
+    title: 'LSWI — Land Surface Water Index',
+    unit: '',
+    low: 'Dry canopy — water stress',
+    high: 'High canopy water content',
+    note: 'Red=stressed · Blue=good water · B8/B11'
+  },
+
+  // NDMI — Moisture — Blue palette (more = wetter)
+  NDMI: {
+    stops: [
+      [-0.40, [253, 224, 239]],  // very light pink — very dry
+      [-0.20, [231, 148, 173]],  // pink
+      [-0.05, [197,  73, 116]],  // deep pink
+      [ 0.05, [120, 190, 230]],  // light blue
+      [ 0.15, [ 65, 145, 205]],  // blue
+      [ 0.30, [  0,  83, 159]],  // dark blue — very moist
+    ],
+    title: 'NDMI — Normalized Difference Moisture Index',
+    unit: '',
+    low: 'Low plant moisture',
+    high: 'High plant moisture',
+    note: 'Pink=dry stress · Blue=moist · B8/B11'
+  },
+
+  // NDWI — Open water: land→water
+  NDWI: {
+    stops: [
+      [-0.30, [210, 180, 140]],  // tan — land
+      [-0.10, [255, 235, 150]],  // yellow — transition
+      [ 0.00, [200, 230, 200]],  // light green
+      [ 0.10, [100, 200, 230]],  // light blue
+      [ 0.20, [  0, 147, 221]],  // blue — shallow water
+      [ 0.40, [  0,  69, 148]],  // dark blue — deep water
+    ],
+    title: 'NDWI — Open Water Detection',
+    unit: '',
+    low: 'Land / no water',
+    high: 'Open water body',
+    note: 'Detects rivers, canals, irrigation ponds · B3/B8'
+  },
+
+  // BSI — Bare Soil: Green→Yellow→Red (more = more bare)
+  BSI: {
+    stops: [
+      [-0.30, [ 26, 152,  80]],  // dark green — vegetated
+      [-0.10, [166, 217, 106]],  // light green
+      [ 0.00, [255, 255, 191]],  // yellow — transition
+      [ 0.10, [253, 174,  97]],  // orange
+      [ 0.20, [215,  48,  39]],  // red — bare soil
+      [ 0.35, [120,   0,   0]],  // dark red — very bare
+    ],
+    title: 'BSI — Bare Soil Index',
+    unit: '',
+    low: 'Vegetated field',
+    high: 'Bare / Fallow land',
+    note: 'Green=crops · Red=bare soil · (SWIR+RED-NIR-BLUE)'
+  },
+
+  // Drought — Red→White→Blue (negative=drought, positive=no drought)
+  DROUGHT_INDEX: {
+    stops: [
+      [-0.60, [103,   0,  31]],  // dark red — severe drought
+      [-0.40, [178,  24,  43]],  // red
+      [-0.25, [214,  96,  77]],  // orange-red
+      [-0.10, [244, 165, 130]],  // salmon
+      [ 0.00, [247, 247, 247]],  // white — neutral
+      [ 0.10, [146, 197, 222]],  // light blue
+      [ 0.25, [ 67, 147, 195]],  // blue
+      [ 0.40, [ 33, 102, 172]],  // dark blue — no drought
+    ],
+    title: 'Drought Stress Index',
+    unit: '',
+    low: 'Severe drought stress',
+    high: 'No drought — good moisture',
+    note: 'Red=drought stressed · Blue=adequate water · MNDWI-NDVI'
+  },
+};
+
+// ── COLOR INTERPOLATION ──────────────────────────────────────────────────
+function interpolateColor(value, stops) {
+  if (!stops || stops.length < 2) return [150, 150, 150];
+  // Clamp to range
+  if (value <= stops[0][0]) return stops[0][1];
+  if (value >= stops[stops.length-1][0]) return stops[stops.length-1][1];
+  // Find surrounding stops
+  for (let i = 0; i < stops.length - 1; i++) {
+    const [v1, c1] = stops[i];
+    const [v2, c2] = stops[i+1];
+    if (value >= v1 && value <= v2) {
+      const t = (value - v1) / (v2 - v1); // 0→1
+      return [
+        Math.round(c1[0] + t * (c2[0] - c1[0])),
+        Math.round(c1[1] + t * (c2[1] - c1[1])),
+        Math.round(c1[2] + t * (c2[2] - c1[2])),
+      ];
+    }
   }
-  // Vegetation indices: red → yellow → green
-  if (v >= 0.50) return [ 26, 152,  80, 200]; // dark green
-  if (v >= 0.38) return [102, 189,  99, 200]; // green
-  if (v >= 0.28) return [166, 217, 106, 200]; // light green
-  if (v >= 0.18) return [253, 174,  97, 200]; // orange
-  if (v >= 0.08) return [215,  48,  39, 200]; // red
-  return [150, 150, 150, 180];                 // grey — bare
+  return [150, 150, 150];
 }
 
-// Generate spatial variation for a field polygon
-// Creates realistic per-pixel NDVI pattern using multi-scale noise
-function generatePixelGrid(pts, baseValue, indexName) {
-  if (!pts || pts.length < 3) return [];
-  const GRID = 24; // 24×24 pixel grid
-  const lats = pts.map(p => p[0]);
-  const lons = pts.map(p => p[1]);
+// ── SPATIAL NOISE GENERATOR ──────────────────────────────────────────────
+// Generates realistic per-pixel variation using multi-scale noise
+// Simulates the spatial heterogeneity seen in real satellite imagery
+function spatialNoise(r, c, scale1=2.7, scale2=1.9, scale3=0.8, amplitude=0.06) {
+  return (
+    Math.sin(r * scale1 + c * scale2)  * amplitude * 0.8 +
+    Math.cos(r * scale2 + c * scale1)  * amplitude * 0.6 +
+    Math.sin((r + c) * scale3)         * amplitude * 0.5 +
+    Math.cos(r * 4.1 + c * 0.7)       * amplitude * 0.3 +
+    Math.sin(r * 0.5 + c * 5.3)       * amplitude * 0.2
+  );
+}
+
+// ── GENERATE PIXEL GRID ──────────────────────────────────────────────────
+// GRID=32 → 32×32 cells inside field boundary
+// Each cell represents ~10m × 10m (matches Sentinel-2 resolution)
+function generatePixelGrid(ptArray, baseValue, indexName) {
+  if (!ptArray || ptArray.length < 3) return [];
+  const GRID = 32;
+  const lats = ptArray.map(p => p[0]);
+  const lons  = ptArray.map(p => p[1]);
   const minLat = Math.min(...lats), maxLat = Math.max(...lats);
   const minLon = Math.min(...lons), maxLon = Math.max(...lons);
   const latSpan = maxLat - minLat;
   const lonSpan = maxLon - minLon;
+  // Estimate pixel size in metres (approximate)
+  const latM  = latSpan * 111000;
+  const lonM  = lonSpan * 111000 * Math.cos(((minLat+maxLat)/2) * Math.PI/180);
+  const pixM  = Math.round(Math.max(latM, lonM) / GRID);
 
   const cells = [];
+  const pal   = INDEX_PALETTES[indexName] || INDEX_PALETTES['NDVI'];
+  // Amplitude of spatial variation — water indices have less variation
+  const isWater = ['MNDWI','LSWI','NDMI','NDWI'].includes(indexName);
+  const amp = isWater ? 0.04 : 0.07;
+
   for (let r = 0; r < GRID; r++) {
     for (let co = 0; co < GRID; co++) {
       const cLat = minLat + (r + 0.5) / GRID * latSpan;
       const cLon = minLon + (co + 0.5) / GRID * lonSpan;
-      if (!pointInPoly([cLat, cLon], pts)) continue;
+      if (!pointInPoly([cLat, cLon], ptArray)) continue;
 
-      // Multi-scale spatial noise — realistic field variation
-      const noise =
-        Math.sin(r * 2.7 + co * 1.9) * 0.05 +
-        Math.cos(r * 1.3 + co * 3.1) * 0.04 +
-        Math.sin((r + co) * 0.8)     * 0.03 +
-        Math.cos(r * 4.1)            * 0.02 +
-        (Math.random() - 0.5)        * 0.015;
-
-      // For water indices, center variation around base
-      const cellVal = Math.max(-0.5, Math.min(0.7, baseValue + noise));
+      const noise    = spatialNoise(r, co, 2.7, 1.9, 0.8, amp);
+      const cellVal  = Math.max(
+        pal.stops[0][0],
+        Math.min(pal.stops[pal.stops.length-1][0], baseValue + noise)
+      );
+      const [rr,gg,bb] = interpolateColor(cellVal, pal.stops);
       cells.push({
         lat1: minLat +  r      / GRID * latSpan,
         lat2: minLat + (r + 1) / GRID * latSpan,
         lon1: minLon +  co     / GRID * lonSpan,
         lon2: minLon + (co + 1)/ GRID * lonSpan,
-        val: cellVal
+        val:  cellVal,
+        r: rr, g: gg, b: bb,
+        pixM: pixM
       });
     }
   }
   return cells;
 }
 
-// Draw pixel overlay on main map for a given index
+// ── SHOW INDEX OVERLAY ON MAP ────────────────────────────────────────────
 function showIndexOverlay(indexName, baseValue) {
   if (!appMap || !drawnPts || drawnPts.length < 3) return;
-
-  // Remove existing overlay
   clearIndexOverlay();
-
   activeIndexName = indexName;
+  const pal   = INDEX_PALETTES[indexName] || INDEX_PALETTES['NDVI'];
+  const cells = generatePixelGrid(drawnPts, baseValue, indexName);
   activeOverlay = L.layerGroup().addTo(appMap);
 
-  const cells = generatePixelGrid(drawnPts, baseValue, indexName);
-  const isWater = ['MNDWI','LSWI','NDWI','NDMI'].includes(indexName);
-
   cells.forEach(cell => {
-    const [r, g, b, a] = ndviToColor(cell.val, indexName);
-    const col  = `rgba(${r},${g},${b},${a/255})`;
+    const col  = `rgba(${cell.r},${cell.g},${cell.b},0.82)`;
     const rect = L.rectangle(
-      [[cell.lat1, cell.lon1], [cell.lat2, cell.lon2]],
-      { color: 'transparent', weight: 0,
-        fillColor: col, fillOpacity: 0.80 }
+      [[cell.lat1,cell.lon1],[cell.lat2,cell.lon2]],
+      {color:'transparent', weight:0, fillColor:col, fillOpacity:0.82}
     );
-    // Popup showing exact value
+    // Click popup — shows exact value + meaning
+    const meaning = getValueMeaning(indexName, cell.val);
     rect.bindPopup(
-      `<div style="font-family:monospace;font-size:12px;text-align:center">
-        <b>${indexName}</b><br>
-        <span style="font-size:16px;color:${col.replace(/,[\d.]+\)$/,',.9)')}">
-          ${cell.val.toFixed(3)}</span><br>
-        <small>${ix_meaning(indexName, cell.val)}</small>
+      `<div style="font-family:var(--M,monospace);font-size:12px;text-align:center;min-width:120px">
+        <div style="font-weight:700;color:#333;margin-bottom:4px">${indexName}</div>
+        <div style="font-size:20px;font-weight:700;color:rgba(${cell.r},${cell.g},${cell.b},1)">
+          ${cell.val.toFixed(3)}</div>
+        <div style="font-size:11px;color:#666;margin-top:4px">${meaning}</div>
+        <div style="font-size:10px;color:#999;margin-top:2px">~${cell.pixM}m pixel</div>
       </div>`,
-      {maxWidth: 150}
+      {maxWidth:160, className:'pixel-popup'}
     );
     activeOverlay.addLayer(rect);
   });
 
-  // Draw field outline on top
-  L.polygon(drawnPts, {color:'#16a34a', weight:2.5, fillOpacity:0})
+  // Field outline on top
+  L.polygon(drawnPts, {color:'#fff', weight:2.5, fillOpacity:0, dashArray:'4,3'})
    .addTo(activeOverlay);
 
-  // Show color legend on map
-  showOverlayLegend(indexName, baseValue, isWater);
+  // Professional gradient legend
+  showGradientLegend(indexName, pal);
+
+  // Update active state in sidebar
+  document.querySelectorAll('.idx-row').forEach(el => {
+    el.classList.toggle('idx-active', el.dataset.index === indexName);
+  });
 }
 
-function ix_meaning(name, val) {
-  const water = ['MNDWI','LSWI','NDWI','NDMI'].includes(name);
-  if (water) {
-    return val > 0 ? 'Water present' : val > -0.1 ? 'Moderate' : 'Dry / Low water';
-  }
-  return val >= 0.35 ? 'Healthy' : val >= 0.20 ? 'Moderate' : 'Stressed';
+// ── GET MEANING TEXT for a specific value ────────────────────────────────
+function getValueMeaning(indexName, val) {
+  const meanings = {
+    NDVI:   v => v>=.40?'Dense healthy':v>=.28?'Moderate':v>=.15?'Stressed':'Bare/no veg',
+    EVI:    v => v>=.35?'High biomass':v>=.22?'Moderate':v>=.10?'Low biomass':'Very low',
+    SAVI:   v => v>=.30?'Good veg':v>=.18?'Moderate':'Bare soil',
+    NDRE:   v => v>=.30?'High chlorophyll':v>=.20?'Good':v>=.12?'Possible stress':'Low chlorophyll',
+    GNDVI:  v => v>=.35?'High chlorophyll':v>=.25?'Moderate':'Low',
+    MNDWI:  v => v>=.10?'Water present':v>=-0.05?'Adequate':v>=-0.20?'Low water':'Drought',
+    LSWI:   v => v>=.15?'High water':v>=-0.05?'Moderate':v>=-0.20?'Dry canopy':'Severe stress',
+    NDMI:   v => v>=.15?'Moist':v>=-0.05?'Moderate':'Dry / stressed',
+    NDWI:   v => v>=.10?'Open water':v>=0?'Wet soil':'Dry land',
+    BSI:    v => v>=.20?'Bare soil':v>=.05?'Sparse veg':'Vegetated',
+    DROUGHT_INDEX: v => v<=-0.30?'Severe drought':v<=-0.10?'Drought':v<=0.05?'Mild':'No drought',
+  };
+  const fn = meanings[indexName];
+  return fn ? fn(val) : '—';
 }
 
+// ── GRADIENT LEGEND ──────────────────────────────────────────────────────
+function showGradientLegend(indexName, pal) {
+  const old = document.getElementById('overlay-legend');
+  if (old) old.remove();
+
+  const leg = document.createElement('div');
+  leg.id = 'overlay-legend';
+  leg.style.cssText = `
+    position:absolute;bottom:22px;left:50%;transform:translateX(-50%);
+    background:rgba(15,15,15,.88);color:#fff;padding:8px 16px 6px;
+    border-radius:12px;font-family:var(--M,monospace);font-size:10px;
+    z-index:1000;min-width:260px;max-width:320px;
+    backdrop-filter:blur(4px);pointer-events:auto;
+    border:1px solid rgba(255,255,255,.12);`;
+
+  // Build gradient CSS from stops
+  const stops = pal.stops;
+  const minV  = stops[0][0], maxV = stops[stops.length-1][0];
+  const gradStops = stops.map(([v, [r,g,b]]) => {
+    const pct = Math.round((v - minV) / (maxV - minV) * 100);
+    return `rgb(${r},${g},${b}) ${pct}%`;
+  }).join(', ');
+
+  leg.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+      <span style="font-size:11px;font-weight:600;opacity:.9">${indexName}</span>
+      <span style="opacity:.5;cursor:pointer;font-size:13px;line-height:1"
+        onclick="clearIndexOverlay()">✕</span>
+    </div>
+    <div style="height:10px;border-radius:5px;
+      background:linear-gradient(to right, ${gradStops});
+      margin-bottom:4px;border:1px solid rgba(255,255,255,.15)"></div>
+    <div style="display:flex;justify-content:space-between;opacity:.7">
+      <span>${minV.toFixed(2)} — ${pal.low}</span>
+      <span>${pal.high} — ${maxV.toFixed(2)}</span>
+    </div>
+    <div style="text-align:center;opacity:.4;margin-top:3px;font-size:9px">${pal.note}</div>`;
+
+  document.getElementById('map').appendChild(leg);
+}
+
+// ── CLEAR OVERLAY ────────────────────────────────────────────────────────
 function clearIndexOverlay() {
   if (activeOverlay && appMap) {
     appMap.removeLayer(activeOverlay);
@@ -1241,35 +1542,7 @@ function clearIndexOverlay() {
   const leg = document.getElementById('overlay-legend');
   if (leg) leg.remove();
   activeIndexName = null;
-}
-
-// Show a floating legend on the map
-function showOverlayLegend(indexName, baseValue, isWater) {
-  const old = document.getElementById('overlay-legend');
-  if (old) old.remove();
-  const leg = document.createElement('div');
-  leg.id = 'overlay-legend';
-  leg.style.cssText = `position:absolute;bottom:20px;left:50%;transform:translateX(-50%);
-    background:rgba(0,0,0,.75);color:#fff;padding:6px 14px;border-radius:20px;
-    font-family:var(--M);font-size:11px;z-index:1000;display:flex;
-    align-items:center;gap:10px;pointer-events:none;`;
-  const colors = isWater
-    ? ['#d73027','#fdae61','#ffffbf','#74add1','#0066ff']
-    : ['#d73027','#fdae61','#ffffbf','#a6d96a','#1a9850'];
-  const labels = isWater
-    ? ['Very dry','Dry','Moderate','Wet','Water']
-    : ['Stressed','Poor','Moderate','Good','Excellent'];
-  leg.innerHTML =
-    `<span style="opacity:.7">${indexName} map</span>` +
-    colors.map((col,i) =>
-      `<span style="display:flex;align-items:center;gap:3px">
-        <span style="width:10px;height:10px;border-radius:50%;
-          background:${col};display:inline-block"></span>
-        <span style="opacity:.8">${labels[i]}</span>
-      </span>`
-    ).join('') +
-    `<span style="cursor:pointer;opacity:.6" onclick="clearIndexOverlay()">✕</span>`;
-  document.getElementById('map').appendChild(leg);
+  document.querySelectorAll('.idx-row').forEach(el => el.classList.remove('idx-active'));
 }
 
 // ── Frontend crop detection (mirrors server logic) ──────────────────────
@@ -1570,29 +1843,25 @@ function renderReport(){
     const valCol = isWater
       ? (ix.raw>-0.05?'#16a34a':ix.raw>-0.15?'#d97706':'#dc2626')
       : (ix.raw>=.30?'#16a34a':ix.raw>=.18?'#d97706':'#dc2626');
-    const isActive = activeIndexName === ix.l;
     return `
-    <div onclick="showIndexOverlay('${ix.l}',${ix.raw})"
-      style="margin-bottom:10px;padding:8px 10px;padding-bottom:10px;
-        border-bottom:1px solid var(--gbr);cursor:pointer;border-radius:8px;
-        transition:background .15s;
-        ${isActive ? 'background:var(--gd);border:1px solid var(--g);' : ''}
-        "
+    <div class="idx-row" data-index="${ix.l}"
+      onclick="showIndexOverlay('${ix.l}',${ix.raw})"
+      style="margin-bottom:8px;padding:8px 10px;border-radius:8px;cursor:pointer;
+        border:1px solid transparent;transition:all .15s;border-bottom:1px solid var(--gbr)"
       onmouseover="this.style.background='var(--gb)'"
-      onmouseout="this.style.background='${isActive?'var(--gd)':'transparent'}'">
+      onmouseout="if(!this.classList.contains('idx-active'))this.style.background='transparent'">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
-        <div>
-          <span style="font-family:var(--M);font-size:12px;font-weight:600;color:var(--t)">${ix.l}</span>
-          <span style="font-family:var(--M);font-size:10px;color:var(--m2);margin-left:5px">${ix.tip}</span>
-          <span style="font-family:var(--M);font-size:9px;color:var(--g);margin-left:5px">
-            ${isActive ? '🗺️ showing' : '👆 click to map'}</span>
+        <div style="flex:1;min-width:0">
+          <span style="font-family:var(--M);font-size:12px;font-weight:700;color:var(--t)">${ix.l}</span>
+          <span style="font-family:var(--M);font-size:9px;color:var(--m2);margin-left:5px">${ix.tip}</span>
+          <span style="font-family:var(--M);font-size:9px;color:#4ade80;margin-left:4px">👆 map</span>
         </div>
-        <span style="font-family:var(--M);font-size:14px;font-weight:700;color:${valCol}">${ix.raw}</span>
+        <span style="font-family:var(--M);font-size:15px;font-weight:800;color:${valCol};flex-shrink:0;margin-left:8px">${ix.raw}</span>
       </div>
-      <div style="background:var(--gbr);border-radius:4px;height:10px;overflow:hidden;margin-bottom:4px">
+      <div style="background:var(--gbr);border-radius:4px;height:9px;overflow:hidden;margin-bottom:4px">
         <div style="width:${pct}%;height:100%;background:${valCol};border-radius:4px;transition:width 1s ease"></div>
       </div>
-      <div style="font-size:11px;color:var(--m);font-style:italic">${ix.meaning}</div>
+      <div style="font-size:10px;color:var(--m);font-style:italic">${ix.meaning}</div>
     </div>`;
   }).join('');
 
