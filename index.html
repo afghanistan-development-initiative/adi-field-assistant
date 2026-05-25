@@ -1223,302 +1223,299 @@ async function tbAnalyse(){
 
 function renderReport(){
   if(!fieldData)return;
-  const{ndvi,mndwi,rain,prov,aHa,aJ,trend}=fieldData;
-  const evi=fieldData.evi, savi=fieldData.savi, lswi=fieldData.lswi;
-  // NDVI status — calibrated for Afghan agriculture
-  // Afghan NDVI: 0.30+ = good, 0.18-0.30 = moderate, <0.18 = stressed
-  const sc=ndvi>=.30?'sc-good':ndvi>=.18?'sc-mod':'sc-bad';
-  const sl=ndvi>=.30?'🟢 GOOD VEGETATION':ndvi>=.18?'🟡 MODERATE STRESS':'🔴 STRESSED';
-  const sd=ndvi>=.30?'Vegetation looks healthy for this region.':ndvi>=.18?'Some stress detected. Monitor and consider irrigation.':'Critical stress. Immediate action needed today.';
-  // Trend bars
-  const tv=Object.values(trend);const mx=Math.max(...tv),mn=Math.min(...tv);
-  const tHTML=Object.entries(trend).map(([yr,v])=>{const h=Math.max(2,(v/mx)*50);const col=v===mn?'#dc2626':v===mx?'#16a34a':'#86efac';return`<div class="tb-w"><div class="tb-b" style="height:${h}px;background:${col}"></div><div class="tb-yr">${yr.slice(-2)}</div></div>`;}).join('');
-  // Actions
-  let acts='';
-  if(mndwi<-0.05)acts+=`<div class="act urgent"><div class="act-cat">URGENT</div><div class="act-t">Irrigate your ${aJ} jereb field within 3–5 days</div><div class="act-d">Apply 50–70mm water. Use drip or furrow. Start early morning.</div><div class="act-c">~${Math.round(aJ*400).toLocaleString()} AFN</div></div>`;
-  if(ndvi<0.25)acts+=`<div class="act urgent"><div class="act-cat">URGENT</div><div class="act-t">Apply nitrogen fertilizer immediately</div><div class="act-d">Urea at 30–40 kg/jereb = ${Math.round(aJ*35)} kg total. Mix in irrigation water.</div></div>`;
-  if(rain<200)acts+=`<div class="act important"><div class="act-cat">IMPORTANT</div><div class="act-t">Consider drought-tolerant crops</div><div class="act-d">${rain}mm/yr is low. Saffron earns 50× more than wheat per mm of water.</div></div>`;
-  acts+=`<div class="act ok"><div class="act-cat">RECOMMENDED</div><div class="act-t">Add compost before next season</div><div class="act-d">2–3 tonnes/jereb improves water retention and reduces fertilizer costs 30%.</div><div class="act-c">~${Math.round(aJ*600).toLocaleString()} AFN</div></div>`;
-  // Crops
-  const crps=mndwi<-0.1||rain<200?[{n:'Saffron',w:'Low water. Highest income.',t:'Very High'},{n:'Flax',w:'Drought tolerant.',t:'High'},{n:'Chickpeas',w:'Low water. Soil health.',t:'Med'}]:rain<350?[{n:'Wheat',w:'Reliable staple.',t:'Med'},{n:'Flax',w:'Better income than wheat.',t:'High'},{n:'Vegetables',w:'High value with irrigation.',t:'High'}]:[{n:'Vegetables',w:'Best income.',t:'Very High'},{n:'Wheat',w:'Reliable.',t:'Med'},{n:'Cotton',w:'Export market.',t:'High'}];
-  const crpHTML=crps.map(c=>`<div class="crop"><div class="crop-n">${c.n}</div><div class="crop-w">${c.w}</div><span class="crop-tag ${c.t.includes('High')?'tag-hi':'tag-md'}">${c.t}</span></div>`).join('');
-  // Income
-  const yld=Math.round(aHa*(rain<200?80:rain<350?300:1000)),price=rain<200?3000:14,inc=yld*price;
-  const costs={s:Math.round(aJ*400),f:Math.round(aJ*1800),i:Math.round(aJ*400),l:Math.round(aJ*600)};
-  const tc=Object.values(costs).reduce((a,b)=>a+b,0),np=inc-tc;
-  const iRows=[['Seeds',`−${costs.s.toLocaleString()} AFN`,'neg'],['Fertilizer',`−${costs.f.toLocaleString()} AFN`,'neg'],['Irrigation',`−${costs.i.toLocaleString()} AFN`,'neg'],['Labour',`−${costs.l.toLocaleString()} AFN`,'neg'],['Yield',yld.toLocaleString()+' kg','neu'],['Gross income',inc.toLocaleString()+' AFN','neu'],['NET PROFIT',(np>=0?'+':'')+np.toLocaleString()+' AFN',np>=0?'pos':'neg']].map(([l,v,c])=>`<div class="inc-row"><span class="lbl">${l}</span><span class="val ${c}">${v}</span></div>`).join('');
-  document.getElementById('rp-body').innerHTML=`
-    <div class="save-badge" id="sbdg"><span class="spin"></span> Saving…</div>
-    <div class="rep-sec"><div class="rep-title">📍 Your field</div><div id="miniMap"></div></div>
-    ${multiIndexHTML}
-    <div class="rep-sec"><div class="rep-title">What the satellite sees</div>
-      <div class="status-card ${sc}"><div class="sc-top"><div class="sc-main">${sl}</div><div class="sc-num" style="color:${ndvi>=.30?'var(--g)':ndvi>=.18?'var(--a)':'var(--r)'}">${ndvi}</div></div><div class="sc-sub">${sd}</div></div>
-    </div>
-    <div class="rep-sec"><div class="rep-title">Field metrics</div>
-      <div class="metrics">
-        <div class="met"><div class="met-v">${aJ}</div><div class="met-l">jereb</div></div>
-        <div class="met"><div class="met-v">${aHa}</div><div class="met-l">ha</div></div>
-        <div class="met"><div class="met-v" style="color:${mndwi>-0.1?'var(--b)':'var(--r)'}">${mndwi}</div><div class="met-l">MNDWI</div></div>
-        <div class="met"><div class="met-v" style="color:var(--b)">${rain}</div><div class="met-l">mm/year</div></div>
-        <div class="met"><div class="met-v">2024</div><div class="met-l">latest data</div></div>
-        <div class="met"><div class="met-v" style="font-size:11px">${mndwi>-0.05?'💧 OK':'🔴 Low water'}</div><div class="met-l">water</div></div>
-      </div>
-    </div>
-    <div class="rep-sec"><div class="rep-title">NDVI trend 2019–2025</div><div class="trend-bars">${tHTML}</div><div style="font-size:11px;color:var(--m2);margin-top:5px">🔴 worst year · 🟢 best year</div></div>
-    <div class="rep-sec"><div class="rep-title">What you should do</div>${acts}</div>
-    <div class="rep-sec"><div class="rep-title">Best crops for your field</div><div class="crop-row">${crpHTML}</div></div>
-    <div class="rep-sec"><div class="rep-title">Income estimate — ${crps[0].n}</div>${iRows}</div>
-    ${cropDetectHTML}
-    ${monthlyRainHTML}
-    ${seasonHTML}
-    <div class="rep-sec"><button onclick="openAIPanel()" style="width:100%;padding:11px;background:var(--gd);color:#4ade80;border:none;border-radius:8px;font-family:var(--M);font-size:13px;cursor:pointer">🤖 Ask AI about your field →</button></div>`;
+  const ndvi  = fieldData.ndvi  || 0.28;
+  const mndwi = fieldData.mndwi || -0.19;
+  const rain  = fieldData.rain  || 240;
+  const prov  = fieldData.prov  || 'Afghanistan';
+  const aHa   = fieldData.aHa   || 1;
+  const aJ    = fieldData.aJ    || 5;
+  const trend = fieldData.trend || {};
+  const evi   = fieldData.evi   || Math.round(ndvi*0.72*1000)/1000;
+  const savi  = fieldData.savi  || Math.round(ndvi*0.85*1000)/1000;
+  const lswi  = fieldData.lswi  || Math.round((mndwi+0.05)*1000)/1000;
 
-  // ── Inject extra sections AFTER main innerHTML is set ────────────────
-  // These need fieldData to be fully set so they run after renderReport sets innerHTML
-  setTimeout(()=>{
-    const body = document.getElementById('rp-body');
-    if(!body) return;
+  // ── NDVI status ──────────────────────────────────────────────────────────
+  const sc = ndvi>=.30?'sc-good':ndvi>=.18?'sc-mod':'sc-bad';
+  const sl = ndvi>=.30?'🟢 GOOD VEGETATION':ndvi>=.18?'🟡 MODERATE STRESS':'🔴 STRESSED';
+  const sd = ndvi>=.30?'Vegetation looks healthy for this region.'
+           : ndvi>=.18?'Some stress detected. Monitor and consider irrigation.'
+           : 'Critical stress. Immediate action needed today.';
+  const ndviNumCol = ndvi>=.30?'var(--g)':ndvi>=.18?'var(--a)':'var(--r)';
 
-    // ── 1. Satellite multi-index bars ──────────────────────────────────
-    const ndviV  = fieldData.ndvi  || 0;
-    const eviV   = fieldData.evi   || round2(ndviV * 0.72);
-    const saviV  = fieldData.savi  || round2(ndviV * 0.85);
-    const mndwiV = fieldData.mndwi || 0;
-    const lswiV  = fieldData.lswi  || round2(mndwiV + 0.05);
+  // ── Trend bars ───────────────────────────────────────────────────────────
+  const tv = Object.values(trend).filter(v=>v);
+  const mx = tv.length?Math.max(...tv):0.4;
+  const mn = tv.length?Math.min(...tv):0.1;
+  const trendHTML = Object.entries(trend).map(([yr,v])=>{
+    if(!v) return '';
+    const h   = Math.max(2, Math.round((v/mx)*50));
+    const col = v===mn?'#dc2626':v===mx?'#16a34a':'#86efac';
+    return '<div class="tb-w"><div class="tb-b" style="height:'+h+'px;background:'+col+'"></div>'+
+           '<div class="tb-yr">'+yr.toString().slice(-2)+'</div></div>';
+  }).join('');
 
-    const indices = [
-      {label:'NDVI', val:ndviV,              raw:ndviV,  max:0.70, col:'#16a34a', tip:'Vegetation health'},
-      {label:'EVI',  val:eviV,               raw:eviV,   max:0.60, col:'#22c55e', tip:'Enhanced vegetation'},
-      {label:'SAVI', val:saviV,              raw:saviV,  max:0.60, col:'#4ade80', tip:'Soil adjusted'},
-      {label:'MNDWI',val:Math.max(0,mndwiV+0.5), raw:mndwiV, max:0.80, col:'#0284c7', tip:'Water index'},
-      {label:'LSWI', val:Math.max(0,lswiV+0.5),  raw:lswiV,  max:0.80, col:'#38bdf8', tip:'Land water'},
-    ];
-    const idxHTML = indices.map(ix=>{
-      const pct = Math.min(100, Math.max(0, Math.round(ix.val/ix.max*100)));
-      return '<div style="margin-bottom:8px">' +
-        '<div style="display:flex;justify-content:space-between;font-family:var(--M);font-size:10px;color:var(--m);margin-bottom:3px">' +
-          '<span>' + ix.label + ' <span style="color:var(--m2);font-size:9px">' + ix.tip + '</span></span>' +
-          '<span style="color:var(--t);font-weight:600">' + ix.raw + '</span>' +
-        '</div>' +
-        '<div style="background:var(--gbr);border-radius:3px;height:8px;overflow:hidden">' +
-          '<div style="width:' + pct + '%;height:100%;background:' + ix.col + ';border-radius:3px;transition:width .8s ease"></div>' +
-        '</div></div>';
-    }).join('');
-
-    const srcBadge = fieldData.source==='gee_live'
-      ? '<span style="color:var(--g)">📡 Live Sentinel-2</span>'
-      : '<span style="color:var(--m2)">📊 Regional database</span>';
-
-    const idxSection = '<div class="rep-sec">' +
-      '<div class="rep-title">📊 Satellite indices</div>' +
-      idxHTML +
-      '<div style="font-size:11px;margin-top:4px">Source: ' + srcBadge + '</div>' +
-      '</div>';
-
-    // ── 2. Crop detection ──────────────────────────────────────────────
-    let cropSection = '';
-    const crops = fieldData.crops || [];
-    if(crops.length){
-      const top  = crops[0];
-      const pct  = Math.round(top.confidence * 100);
-      const col  = pct>=80?'var(--g)':pct>=65?'var(--a)':'var(--m2)';
-      const others = crops.slice(1,3).map(cr =>
-        '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--gbr);font-size:12px">' +
-          '<span>' + cr.label_en + '</span>' +
-          '<span style="font-family:var(--M);color:var(--m2)">' + Math.round(cr.confidence*100) + '%</span>' +
-        '</div>'
-      ).join('');
-      cropSection =
-        '<div class="rep-sec">' +
-        '<div class="rep-title">🌾 Crop detection</div>' +
-        '<div style="background:var(--gb);border:1px solid var(--gbr);border-radius:8px;padding:.85rem;margin-bottom:6px">' +
-          '<div style="display:flex;align-items:center;justify-content:space-between">' +
-            '<div>' +
-              '<div style="font-family:var(--D);font-size:20px">' + top.label_en + '</div>' +
-              '<div style="font-size:11px;color:var(--m);margin-top:2px">' + top.reason + '</div>' +
-            '</div>' +
-            '<div style="font-family:var(--D);font-size:28px;color:' + col + '">' + pct + '%</div>' +
-          '</div>' +
-        '</div>' +
-        (others ? '<div style="font-family:var(--M);font-size:9px;color:var(--m2);letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px">Other possibilities</div>' + others : '') +
-        '<div style="font-size:11px;color:var(--m2);margin-top:6px">⚠️ Satellite crop detection ~70–85% accuracy. Verify in field.</div>' +
-        '</div>';
-    }
-
-    // ── 3. Monthly rainfall bar chart ──────────────────────────────────
-    let rainSection = '';
-    const mr = fieldData.monthly_rain;
-    if(mr && mr.length===12){
-      const maxR  = Math.max(...mr);
-      const mLabels = ['J','F','M','A','M','J','J','A','S','O','N','D'];
-      const bars = mr.map((v,i)=>{
-        const h   = maxR>0 ? Math.max(2, Math.round(v/maxR*55)) : 2;
-        const col = v===maxR ? '#0284c7' : v<8 ? '#e5e7eb' : '#38bdf8';
-        return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px">' +
-          '<div style="font-family:var(--M);font-size:7px;color:var(--m2)">' + Math.round(v) + '</div>' +
-          '<div style="height:' + h + 'px;width:100%;background:' + col + ';border-radius:2px 2px 0 0;min-height:2px"></div>' +
-          '<div style="font-family:var(--M);font-size:8px;color:var(--m2)">' + mLabels[i] + '</div>' +
-          '</div>';
-      }).join('');
-      const dry = mr.filter(v=>v<8).length;
-      rainSection =
-        '<div class="rep-sec">' +
-        '<div class="rep-title">🌧️ Monthly rainfall</div>' +
-        '<div style="display:flex;align-items:flex-end;gap:2px;height:80px;padding:0 4px">' + bars + '</div>' +
-        '<div style="font-size:11px;color:var(--m2);margin-top:5px">' + dry + ' dry months/yr · ' + fieldData.rain + 'mm annual</div>' +
-        '</div>';
-    }
-
-    // ── 4. Seasonal action (what to do RIGHT NOW) ───────────────────────
-    let seasonSection = '';
-    const season = fieldData.season || [];
-    if(season.length){
-      const mo = new Date().toLocaleString('en',{month:'long'});
-      const items = season.map(s=>
-        '<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--gbr);font-size:12px">' +
-          '<span>' + (s.type==='urgent'?'🚨':s.type==='now'?'📅':'✅') + '</span>' +
-          '<span>' + s.action + '</span>' +
-        '</div>'
-      ).join('');
-      seasonSection =
-        '<div class="rep-sec">' +
-        '<div class="rep-title">📅 Right now — ' + mo + '</div>' +
-        items +
-        '</div>';
-    }
-
-    // ── 5. Soil analysis section ──────────────────────────────────────
-    let soilSection = '';
-    const soil = fieldData.soil;
-    if(soil && soil.ph){
-      // Texture triangle visual
-      const clay=soil.clay||20, sand=soil.sand||40, silt=soil.silt||40;
-      const srcLabel=soil.source==='soilgrids_api'
-        ? '🌐 SoilGrids API (ISRIC) — 250m resolution'
-        : '📊 Provincial database';
-
-      // pH color
-      const phCol=soil.ph<6.5?'var(--r)':soil.ph>8.0?'var(--a)':'var(--g)';
-      const phLabel=soil.ph<6.5?'Acidic':soil.ph<=7.3?'Neutral':soil.ph<=7.8?'Slightly alkaline':'Alkaline';
-
-      // Texture composition bars
-      const texBars=[
-        {label:'Clay',  val:clay,  col:'#dc2626'},
-        {label:'Sand',  val:sand,  col:'#d97706'},
-        {label:'Silt',  val:silt,  col:'#16a34a'},
-      ].map(t=>
-        '<div style="margin-bottom:5px">'+
-          '<div style="display:flex;justify-content:space-between;'+
-            'font-family:var(--M);font-size:10px;color:var(--m);margin-bottom:2px">'+
-            '<span>'+t.label+'</span><span>'+t.val+'%</span>'+
-          '</div>'+
-          '<div style="background:var(--gbr);border-radius:2px;height:6px">'+
-            '<div style="width:'+Math.min(100,t.val)+'%;height:100%;'+
-              'background:'+t.col+';border-radius:2px"></div>'+
-          '</div>'+
-        '</div>'
-      ).join('');
-
-      // Recommendations
-      const recsHTML=(soil.recommendations||[]).slice(0,3).map(r=>
-        '<div style="display:flex;gap:6px;padding:5px 0;border-bottom:1px solid var(--gbr);'+
-          'font-size:12px"><span>→</span><span style="color:var(--m)">'+r+'</span></div>'
-      ).join('');
-
-      soilSection =
-        '<div class="rep-sec">'+
-        '<div class="rep-title">🌍 Soil analysis</div>'+
-
-        // Main soil card
-        '<div style="background:var(--bg);border:1px solid var(--gbr);'+
-          'border-radius:8px;padding:.85rem;margin-bottom:8px">'+
-          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
-            '<div>'+
-              '<div style="font-family:var(--D);font-size:20px">'+soil.texture+'</div>'+
-              '<div style="font-family:var(--M);font-size:10px;color:var(--m2);margin-top:2px">'+
-                'Soil texture class'+
-              '</div>'+
-            '</div>'+
-            '<div style="text-align:right">'+
-              '<div style="font-family:var(--D);font-size:24px;color:'+phCol+'">'+soil.ph+'</div>'+
-              '<div style="font-family:var(--M);font-size:10px;color:'+phCol+'">'+phLabel+'</div>'+
-            '</div>'+
-          '</div>'+
-          texBars+
-        '</div>'+
-
-        // Key metrics row
-        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin-bottom:8px">'+
-          '<div style="background:var(--bg);border:1px solid var(--gbr);border-radius:7px;'+
-            'padding:.6rem;text-align:center">'+
-            '<div style="font-family:var(--D);font-size:20px;color:var(--g)">'+soil.soc+'%</div>'+
-            '<div style="font-family:var(--M);font-size:9px;color:var(--m2)">Organic carbon</div>'+
-          '</div>'+
-          '<div style="background:var(--bg);border:1px solid var(--gbr);border-radius:7px;'+
-            'padding:.6rem;text-align:center">'+
-            '<div style="font-family:var(--D);font-size:20px;color:var(--b)">'+
-              (soil.bulk_density||1.35)+
-            '</div>'+
-            '<div style="font-family:var(--M);font-size:9px;color:var(--m2)">Bulk density</div>'+
-          '</div>'+
-          '<div style="background:var(--bg);border:1px solid var(--gbr);border-radius:7px;'+
-            'padding:.6rem;text-align:center">'+
-            '<div style="font-family:var(--D);font-size:20px;color:var(--m)">'+soil.resolution+'</div>'+
-            '<div style="font-family:var(--M);font-size:9px;color:var(--m2)">Resolution</div>'+
-          '</div>'+
-        '</div>'+
-
-        // Recommendations
-        '<div style="font-family:var(--M);font-size:9px;color:var(--m2);'+
-          'letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px">'+
-          'Soil management advice'+
-        '</div>'+
-        recsHTML+
-
-        // Source badge
-        '<div style="font-size:11px;color:var(--m2);margin-top:6px">'+srcLabel+'</div>'+
-        '</div>';
-    } else {
-      // Loading state
-      soilSection =
-        '<div class="rep-sec">'+
-        '<div class="rep-title">🌍 Soil analysis</div>'+
-        '<div style="background:var(--bg);border:1px solid var(--gbr);border-radius:8px;'+
-          'padding:1rem;text-align:center;color:var(--m2);font-family:var(--M);font-size:11px">'+
-          '<span class="spin" style="border-color:rgba(22,163,74,.3);border-top-color:var(--g)"></span>'+
-          ' Loading SoilGrids data…'+
-        '</div>'+
-        '</div>';
-    }
-
-    // ── Insert all new sections before the Ask AI button ───────────────
-    const askBtn = body.querySelector('button[onclick="openAIPanel()"]');
-    if(askBtn && askBtn.parentElement){
-      const insertBefore = askBtn.parentElement;
-      // Create wrapper div and insert
-      const wrapper = document.createElement('div');
-      wrapper.innerHTML = idxSection + cropSection + rainSection + soilSection + seasonSection;
-      body.insertBefore(wrapper, insertBefore);
-    } else {
-      // Fallback — just append
-      body.insertAdjacentHTML('beforeend', idxSection + cropSection + rainSection + soilSection + seasonSection);
-    }
-  }, 100);
-  setTimeout(()=>{const b=document.getElementById('sbdg');if(b){b.innerHTML='✓ Saved to database';b.style.background='var(--gb)';}},2000);
-  try{const r=JSON.parse(localStorage.getItem('zaminai_fields')||'[]');r.push({...fieldData,ts:Date.now()});localStorage.setItem('zaminai_fields',JSON.stringify(r.slice(-50)));}catch(e){}
-  setTimeout(initMiniMap,400);
-}
-
-function pointInPoly(point,poly){
-  // Ray casting algorithm — returns true if point [lat,lon] is inside polygon
-  let inside=false;
-  const [py,px]=point;
-  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
-    const [iy,ix]=poly[i],[jy,jx]=poly[j];
-    if(((iy>py)!=(jy>py))&&(px<(jx-ix)*(py-iy)/(jy-iy)+ix)) inside=!inside;
+  // ── Actions ──────────────────────────────────────────────────────────────
+  let acts = '';
+  if(mndwi < -0.05){
+    const days = mndwi<-0.20?2:mndwi<-0.10?4:6;
+    acts += '<div class="act urgent"><div class="act-cat">URGENT</div>'+
+      '<div class="act-t">Irrigate your '+aJ+' jereb field within '+days+'–'+(days+2)+' days</div>'+
+      '<div class="act-d">Apply 50–70mm water. Use drip or furrow. Start early morning.</div>'+
+      '<div class="act-c">~'+Math.round(aJ*400).toLocaleString()+' AFN</div></div>';
   }
-  return inside;
+  if(ndvi < 0.22){
+    acts += '<div class="act urgent"><div class="act-cat">URGENT</div>'+
+      '<div class="act-t">Apply nitrogen fertilizer immediately</div>'+
+      '<div class="act-d">Urea '+Math.round(aJ*35)+'kg (30–40 kg/jereb). Mix into irrigation water.</div></div>';
+  }
+  if(rain < 200){
+    acts += '<div class="act important"><div class="act-cat">IMPORTANT</div>'+
+      '<div class="act-t">Consider drought-tolerant crops</div>'+
+      '<div class="act-d">'+rain+'mm/yr is low. Saffron earns 50× more than wheat per mm of water.</div></div>';
+  }
+  acts += '<div class="act ok"><div class="act-cat">RECOMMENDED</div>'+
+    '<div class="act-t">Add compost before next season</div>'+
+    '<div class="act-d">2–3 tonnes/jereb improves water retention 30%.</div>'+
+    '<div class="act-c">~'+Math.round(aJ*600).toLocaleString()+' AFN</div></div>';
+
+  // ── Crops ────────────────────────────────────────────────────────────────
+  const crpSet = (mndwi<-0.10||rain<200)
+    ? [{n:'Saffron',w:'Low water. Highest income.',t:'tag-hi'},
+       {n:'Flax',w:'Drought tolerant.',t:'tag-hi'},
+       {n:'Chickpeas',w:'Very low water.',t:'tag-md'}]
+    : rain<350
+    ? [{n:'Wheat',w:'Reliable staple.',t:'tag-md'},
+       {n:'Flax',w:'Better income than wheat.',t:'tag-hi'},
+       {n:'Vegetables',w:'High value with irrigation.',t:'tag-hi'}]
+    : [{n:'Vegetables',w:'Best income.',t:'tag-hi'},
+       {n:'Wheat',w:'Reliable.',t:'tag-md'},
+       {n:'Cotton',w:'Export market.',t:'tag-hi'}];
+  const crpsHTML = crpSet.map(cr=>
+    '<div class="crop"><div class="crop-n">'+cr.n+'</div>'+
+    '<div class="crop-w">'+cr.w+'</div>'+
+    '<span class="crop-tag '+cr.t+'">'+
+      (cr.t==='tag-hi'?'High':'Medium')+'</span></div>'
+  ).join('');
+
+  // ── Income estimate ──────────────────────────────────────────────────────
+  const yld   = Math.round(aHa*(rain<200?80:rain<350?300:1000));
+  const price = rain<200?3000:14;
+  const inc   = yld*price;
+  const costs = {seeds:Math.round(aJ*400),fert:Math.round(aJ*1800),
+                 irr:Math.round(aJ*400),lab:Math.round(aJ*600)};
+  const tc    = Object.values(costs).reduce((a,b)=>a+b,0);
+  const np    = inc-tc;
+  const iRows = [
+    ['Seeds',          '−'+costs.seeds.toLocaleString()+' AFN','neg'],
+    ['Fertilizer',     '−'+costs.fert.toLocaleString()+' AFN','neg'],
+    ['Irrigation',     '−'+costs.irr.toLocaleString()+' AFN','neg'],
+    ['Labour',         '−'+costs.lab.toLocaleString()+' AFN','neg'],
+    ['Yield estimate',  yld.toLocaleString()+' kg','val neu'],
+    ['Gross income',    inc.toLocaleString()+' AFN','val neu'],
+    ['NET PROFIT',     (np>=0?'+':'')+np.toLocaleString()+' AFN',np>=0?'pos':'neg'],
+  ].map(([l,v,cls])=>
+    '<div class="inc-row"><span class="lbl">'+l+'</span>'+
+    '<span class="val '+cls+'">'+v+'</span></div>'
+  ).join('');
+
+  // ── Satellite indices bars ───────────────────────────────────────────────
+  const srcBadge = fieldData.source==='gee_live'
+    ? '📡 Live Sentinel-2' : '📊 Regional database';
+  const idxRows = [
+    {l:'NDVI', v:ndvi,              raw:ndvi,  max:0.70, col:'#16a34a', tip:'Vegetation health'},
+    {l:'EVI',  v:evi,               raw:evi,   max:0.60, col:'#22c55e', tip:'Enhanced vegetation'},
+    {l:'SAVI', v:savi,              raw:savi,  max:0.60, col:'#4ade80', tip:'Soil adjusted'},
+    {l:'MNDWI',v:Math.max(0,mndwi+0.5),raw:mndwi,max:0.80,col:'#0284c7',tip:'Water index'},
+    {l:'LSWI', v:Math.max(0,lswi+0.5), raw:lswi, max:0.80,col:'#38bdf8',tip:'Land water'},
+  ].map(ix=>{
+    const pct = Math.min(100,Math.max(0,Math.round(ix.v/ix.max*100)));
+    return '<div style="margin-bottom:8px">'+
+      '<div style="display:flex;justify-content:space-between;font-family:var(--M);font-size:10px;color:var(--m);margin-bottom:3px">'+
+        '<span>'+ix.l+' <span style="color:var(--m2);font-size:9px">'+ix.tip+'</span></span>'+
+        '<span style="color:var(--t);font-weight:600">'+ix.raw+'</span>'+
+      '</div>'+
+      '<div style="background:var(--gbr);border-radius:3px;height:8px;overflow:hidden">'+
+        '<div style="width:'+pct+'%;height:100%;background:'+ix.col+';border-radius:3px;transition:width .8s ease"></div>'+
+      '</div></div>';
+  }).join('');
+
+  // ── Crop detection ───────────────────────────────────────────────────────
+  const crops = fieldData.crops||[];
+  let cropDetHTML = '';
+  if(crops.length){
+    const top = crops[0];
+    const pct = Math.round(top.confidence*100);
+    const col = pct>=80?'var(--g)':pct>=65?'var(--a)':'var(--m2)';
+    cropDetHTML =
+      '<div class="rep-sec">'+
+      '<div class="rep-title">🌾 Crop detection</div>'+
+      '<div style="background:var(--gb);border:1px solid var(--gbr);border-radius:8px;padding:.85rem;margin-bottom:6px">'+
+        '<div style="display:flex;align-items:center;justify-content:space-between">'+
+          '<div>'+
+            '<div style="font-family:var(--D);font-size:20px">'+top.label_en+'</div>'+
+            '<div style="font-size:11px;color:var(--m);margin-top:2px">'+top.reason+'</div>'+
+          '</div>'+
+          '<div style="font-family:var(--D);font-size:28px;color:'+col+'">'+pct+'%</div>'+
+        '</div>'+
+      '</div>'+
+      (crops.slice(1,3).map(cr=>
+        '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--gbr);font-size:12px">'+
+          '<span>'+cr.label_en+'</span>'+
+          '<span style="font-family:var(--M);color:var(--m2)">'+Math.round(cr.confidence*100)+'%</span>'+
+        '</div>').join(''))+
+      '<div style="font-size:11px;color:var(--m2);margin-top:6px">⚠️ ~70–85% accuracy. Verify in field.</div>'+
+      '</div>';
+  }
+
+  // ── Monthly rainfall chart ───────────────────────────────────────────────
+  const mr = fieldData.monthly_rain||[];
+  let rainHTML = '';
+  if(mr.length===12){
+    const maxR = Math.max(...mr);
+    const mL   = ['J','F','M','A','M','J','J','A','S','O','N','D'];
+    const bars  = mr.map((v,i)=>{
+      const h   = maxR>0?Math.max(2,Math.round(v/maxR*55)):2;
+      const col = v===maxR?'#0284c7':v<8?'#e5e7eb':'#38bdf8';
+      return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px">'+
+        '<div style="font-family:var(--M);font-size:7px;color:var(--m2)">'+Math.round(v)+'</div>'+
+        '<div style="height:'+h+'px;width:100%;background:'+col+';border-radius:2px 2px 0 0;min-height:2px"></div>'+
+        '<div style="font-family:var(--M);font-size:8px;color:var(--m2)">'+mL[i]+'</div>'+
+      '</div>';
+    }).join('');
+    rainHTML =
+      '<div class="rep-sec">'+
+      '<div class="rep-title">🌧️ Monthly rainfall</div>'+
+      '<div style="display:flex;align-items:flex-end;gap:2px;height:80px;padding:0 4px">'+bars+'</div>'+
+      '<div style="font-size:11px;color:var(--m2);margin-top:5px">'+
+        mr.filter(v=>v<8).length+' dry months/yr · '+rain+'mm annual</div>'+
+      '</div>';
+  }
+
+  // ── Soil section ─────────────────────────────────────────────────────────
+  const soil = fieldData.soil;
+  let soilHTML = '';
+  if(soil&&soil.ph){
+    const phCol   = soil.ph<6.5?'var(--r)':soil.ph>8.0?'var(--a)':'var(--g)';
+    const phLabel = soil.ph<6.5?'Acidic':soil.ph<=7.3?'Neutral':soil.ph<=7.8?'Slightly alkaline':'Alkaline';
+    const texBars = [
+      {l:'Clay',v:soil.clay||20,col:'#dc2626'},
+      {l:'Sand',v:soil.sand||40,col:'#d97706'},
+      {l:'Silt',v:soil.silt||40,col:'#16a34a'},
+    ].map(t=>
+      '<div style="margin-bottom:5px">'+
+        '<div style="display:flex;justify-content:space-between;font-family:var(--M);font-size:10px;color:var(--m);margin-bottom:2px">'+
+          '<span>'+t.l+'</span><span>'+t.v+'%</span></div>'+
+        '<div style="background:var(--gbr);border-radius:2px;height:6px">'+
+          '<div style="width:'+Math.min(100,t.v)+'%;height:100%;background:'+t.col+';border-radius:2px"></div>'+
+        '</div></div>'
+    ).join('');
+    const recsHTML = (soil.recommendations||[]).slice(0,3).map(r=>
+      '<div style="display:flex;gap:6px;padding:5px 0;border-bottom:1px solid var(--gbr);font-size:12px">'+
+        '<span style="color:var(--g)">→</span><span style="color:var(--m)">'+r+'</span></div>'
+    ).join('');
+    soilHTML =
+      '<div class="rep-sec">'+
+      '<div class="rep-title">🌍 Soil analysis</div>'+
+      '<div style="background:var(--bg);border:1px solid var(--gbr);border-radius:8px;padding:.85rem;margin-bottom:8px">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
+          '<div><div style="font-family:var(--D);font-size:20px">'+soil.texture+'</div>'+
+          '<div style="font-family:var(--M);font-size:10px;color:var(--m2)">Soil texture</div></div>'+
+          '<div style="text-align:right">'+
+            '<div style="font-family:var(--D);font-size:24px;color:'+phCol+'">'+soil.ph+'</div>'+
+            '<div style="font-family:var(--M);font-size:10px;color:'+phCol+'">'+phLabel+'</div>'+
+          '</div>'+
+        '</div>'+texBars+'</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:8px">'+
+        '<div style="background:var(--bg);border:1px solid var(--gbr);border-radius:7px;padding:.6rem;text-align:center">'+
+          '<div style="font-family:var(--D);font-size:20px;color:var(--g)">'+(soil.soc||0.8)+'%</div>'+
+          '<div style="font-family:var(--M);font-size:9px;color:var(--m2)">Organic carbon</div></div>'+
+        '<div style="background:var(--bg);border:1px solid var(--gbr);border-radius:7px;padding:.6rem;text-align:center">'+
+          '<div style="font-family:var(--D);font-size:20px;color:var(--b)">'+(soil.source==='soilgrids_api'?'📡 API':'📊 DB')+'</div>'+
+          '<div style="font-family:var(--M);font-size:9px;color:var(--m2)">Data source</div></div>'+
+      '</div>'+
+      '<div style="font-family:var(--M);font-size:9px;color:var(--m2);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Management advice</div>'+
+      recsHTML+'</div>';
+  }
+
+  // ── Season section ───────────────────────────────────────────────────────
+  const season = fieldData.season||[];
+  let seasonHTML = '';
+  if(season.length){
+    const mo = new Date().toLocaleString('en',{month:'long'});
+    seasonHTML =
+      '<div class="rep-sec">'+
+      '<div class="rep-title">📅 Right now — '+mo+'</div>'+
+      season.map(s=>
+        '<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--gbr);font-size:12px">'+
+          '<span>'+(s.type==='urgent'?'🚨':s.type==='now'?'📅':'✅')+'</span>'+
+          '<span>'+s.action+'</span></div>'
+      ).join('')+
+      '</div>';
+  }
+
+  // ── Write full report ────────────────────────────────────────────────────
+  document.getElementById('rp-body').innerHTML =
+    '<div class="save-badge" id="sbdg"><span class="spin"></span> Saving…</div>'+
+
+    '<div class="rep-sec"><div class="rep-title">📍 Your field</div>'+
+    '<div id="miniMap"></div></div>'+
+
+    '<div class="rep-sec"><div class="rep-title">📊 Satellite indices</div>'+
+    idxRows+
+    '<div style="font-size:11px;color:var(--m2);margin-top:4px">'+srcBadge+'</div></div>'+
+
+    '<div class="rep-sec"><div class="rep-title">What the satellite sees</div>'+
+    '<div class="status-card '+sc+'">'+
+      '<div class="sc-top"><div class="sc-main">'+sl+'</div>'+
+      '<div class="sc-num" style="color:'+ndviNumCol+'">'+ndvi+'</div></div>'+
+      '<div class="sc-sub">'+sd+'</div>'+
+    '</div></div>'+
+
+    '<div class="rep-sec"><div class="rep-title">Field metrics</div>'+
+    '<div class="metrics">'+
+      '<div class="met"><div class="met-v">'+aJ+'</div><div class="met-l">jereb</div></div>'+
+      '<div class="met"><div class="met-v">'+aHa+'</div><div class="met-l">ha</div></div>'+
+      '<div class="met"><div class="met-v" style="color:'+(mndwi>-0.1?'var(--b)':'var(--r)')+'">'+mndwi+'</div><div class="met-l">MNDWI</div></div>'+
+      '<div class="met"><div class="met-v" style="color:var(--b)">'+rain+'</div><div class="met-l">mm/year</div></div>'+
+      '<div class="met"><div class="met-v">2024</div><div class="met-l">latest</div></div>'+
+      '<div class="met"><div class="met-v" style="font-size:11px">'+(mndwi>-0.05?'💧 OK':'🔴 Low')+'</div><div class="met-l">water</div></div>'+
+    '</div></div>'+
+
+    '<div class="rep-sec"><div class="rep-title">NDVI trend 2019–2025</div>'+
+    '<div class="trend-bars">'+trendHTML+'</div>'+
+    '<div style="font-size:11px;color:var(--m2);margin-top:5px">🔴 worst · 🟢 best year</div></div>'+
+
+    '<div class="rep-sec"><div class="rep-title">What you should do</div>'+acts+'</div>'+
+
+    '<div class="rep-sec"><div class="rep-title">Best crops</div>'+
+    '<div class="crop-row">'+crpsHTML+'</div></div>'+
+
+    '<div class="rep-sec"><div class="rep-title">Income estimate</div>'+iRows+'</div>'+
+
+    cropDetHTML + rainHTML + soilHTML + seasonHTML +
+
+    '<div class="rep-sec">'+
+    '<button onclick="openAIPanel()" style="width:100%;padding:11px;background:var(--gd);'+
+    'color:#4ade80;border:none;border-radius:8px;font-family:var(--M);font-size:13px;cursor:pointer">'+
+    '🤖 Ask AI about your field →</button></div>';
+
+  // Save badge
+  setTimeout(()=>{
+    const b=document.getElementById('sbdg');
+    if(b){b.innerHTML='✓ Saved to database';b.style.background='var(--gb)';}
+  },2000);
+
+  // Save to localStorage
+  try{
+    const r=JSON.parse(localStorage.getItem('zaminai_fields')||'[]');
+    r.push({...fieldData,ts:Date.now()});
+    localStorage.setItem('zaminai_fields',JSON.stringify(r.slice(-50)));
+  }catch(e){}
+
+  // Mini-map
+  setTimeout(initMiniMap, 400);
 }
+
 function initMiniMap(){
   const el=document.getElementById('miniMap');
   if(!el||!pts.length)return;
