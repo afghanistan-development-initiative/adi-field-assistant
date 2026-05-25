@@ -1042,6 +1042,10 @@ function initMap(){
   const googleSat=L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{attribution:'© Google',maxZoom:21,maxNativeZoom:20});
   // Start with Esri satellite (with labels) — good satellite default
   appMap=L.map('map',{center:[34.5,67.7],zoom:6,layers:[esriClarity,esriLabels],zoomControl:false});
+  // Create dedicated overlay pane with high z-index — above satellite tiles
+  appMap.createPane('ndviPane');
+  appMap.getPane('ndviPane').style.zIndex = 450;
+  appMap.getPane('ndviPane').style.pointerEvents = 'auto';
   window._esriClarity=esriClarity;window._esriLabels=esriLabels;window._osm=osm;window._googleSat=googleSat;
   window._isSat='esri'; // start on satellite
   L.control.zoom({position:'bottomright'}).addTo(appMap);
@@ -1443,7 +1447,8 @@ function showIndexOverlay(indexName, baseValue) {
     const col  = `rgba(${cell.r},${cell.g},${cell.b},0.82)`;
     const rect = L.rectangle(
       [[cell.lat1,cell.lon1],[cell.lat2,cell.lon2]],
-      {color:'transparent', weight:0, fillColor:col, fillOpacity:0.82}
+      {color:'transparent', weight:0, fillColor:col, fillOpacity:0.82,
+       pane:'ndviPane', interactive:true}
     );
     // Click popup — shows exact value + meaning
     const meaning = getValueMeaning(indexName, cell.val);
@@ -1460,9 +1465,13 @@ function showIndexOverlay(indexName, baseValue) {
     activeOverlay.addLayer(rect);
   });
 
-  // Field outline on top
-  L.polygon(drawnPts, {color:'#fff', weight:2.5, fillOpacity:0, dashArray:'4,3'})
-   .addTo(activeOverlay);
+  // Field outline on top — in marker pane (z=600) above ndviPane
+  L.polygon(drawnPts, {
+    color:'#fff', weight:2.5, fillOpacity:0,
+    dashArray:'4,3', pane:'markerPane'
+  }).addTo(activeOverlay);
+  // Force map to re-render
+  appMap.invalidateSize();
 
   // Professional gradient legend
   showGradientLegend(indexName, pal);
@@ -1471,6 +1480,17 @@ function showIndexOverlay(indexName, baseValue) {
   document.querySelectorAll('.idx-row').forEach(el => {
     el.classList.toggle('idx-active', el.dataset.index === indexName);
   });
+  // Show count notification
+  notify('🗺️ ' + indexName + ' map: ' + cells.length + ' pixels drawn');
+  // Zoom to field
+  if(drawnPts.length >= 3){
+    const lats = drawnPts.map(p=>p[0]);
+    const lons  = drawnPts.map(p=>p[1]);
+    appMap.fitBounds([
+      [Math.min(...lats),Math.min(...lons)],
+      [Math.max(...lats),Math.max(...lons)]
+    ], {padding:[20,20], animate:true});
+  }
 }
 
 // ── GET MEANING TEXT for a specific value ────────────────────────────────
@@ -1605,6 +1625,7 @@ function detectSeasonFrontend(province,ndvi,mndwi,month){
 
 async function tbAnalyse(){
   if(pts.length<3){notify('Draw your field first');return;}
+  drawnPts = [...pts]; // copy to global for overlay system
   const btn=document.getElementById('tb-analyse');
   btn.innerHTML='<span class="spin"></span> Analysing...';btn.disabled=true;
   showRp();
@@ -1616,7 +1637,6 @@ async function tbAnalyse(){
   let ndvi=0.28,mndwi=-0.19,rain=240,prov='Afghanistan',trend={2019:0.34,2020:0.31,2021:0.27,2022:0.16,2023:0.22,2024:0.28,2025:0.30};
   for(const[a,b,d,e,n,nv,mw,r,tr] of DB){if(clat>=a&&clat<=b&&clon>=d&&clon<=e){ndvi=nv;mndwi=mw;rain=r;prov=n;trend=tr;break;}}
   // Compute estimated indices from regional NDVI when GEE not yet loaded
-  drawnPts = pts; // store for pixel overlay system
   const estEvi  = Math.round(ndvi*0.72*1000)/1000;
   const estSavi = Math.round(ndvi*0.85*1000)/1000;
   const estLswi = Math.round((mndwi+0.05)*1000)/1000;
@@ -2150,12 +2170,18 @@ function renderReport(){
 
   // Mini-map — wait for panel animation
   setTimeout(initMiniMap, 400);
-  // Auto-show NDVI pixel overlay on main map
+  // Auto-show NDVI pixel overlay on main map after tiles load
   setTimeout(()=>{
-    if(drawnPts && drawnPts.length>=3){
+    if(drawnPts && drawnPts.length>=3 && appMap){
+      // Ensure ndviPane exists
+      if(!appMap.getPane('ndviPane')){
+        appMap.createPane('ndviPane');
+        appMap.getPane('ndviPane').style.zIndex = 450;
+        appMap.getPane('ndviPane').style.pointerEvents = 'auto';
+      }
       showIndexOverlay('NDVI', ndvi);
     }
-  }, 600);
+  }, 800);
 }
 
 function initMiniMap(){
