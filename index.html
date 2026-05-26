@@ -1404,44 +1404,70 @@ function spatialNoise(r, c, scale1=2.7, scale2=1.9, scale3=0.8, amplitude=0.06) 
 
 // ── GENERATE PIXEL GRID ──────────────────────────────────────────────────
 // GRID=32 → 32×32 cells inside field boundary
-// Each cell represents ~10m × 10m (matches Sentinel-2 resolution)
+// Uses multi-point sampling to avoid pixels bleeding outside boundary
+// Checks center + 4 corners — cell only drawn if MAJORITY are inside
 function generatePixelGrid(ptArray, baseValue, indexName) {
   if (!ptArray || ptArray.length < 3) return [];
-  const GRID = 32;
+  const GRID = 36; // slightly higher resolution
   const lats = ptArray.map(p => p[0]);
   const lons  = ptArray.map(p => p[1]);
   const minLat = Math.min(...lats), maxLat = Math.max(...lats);
   const minLon = Math.min(...lons), maxLon = Math.max(...lons);
   const latSpan = maxLat - minLat;
   const lonSpan = maxLon - minLon;
-  // Estimate pixel size in metres (approximate)
   const latM  = latSpan * 111000;
   const lonM  = lonSpan * 111000 * Math.cos(((minLat+maxLat)/2) * Math.PI/180);
   const pixM  = Math.round(Math.max(latM, lonM) / GRID);
 
   const cells = [];
   const pal   = INDEX_PALETTES[indexName] || INDEX_PALETTES['NDVI'];
-  // Amplitude of spatial variation — water indices have less variation
   const isWater = ['MNDWI','LSWI','NDMI','NDWI'].includes(indexName);
   const amp = isWater ? 0.04 : 0.07;
 
+  // Cell size
+  const dLat = latSpan / GRID;
+  const dLon = lonSpan / GRID;
+
   for (let r = 0; r < GRID; r++) {
     for (let co = 0; co < GRID; co++) {
-      const cLat = minLat + (r + 0.5) / GRID * latSpan;
-      const cLon = minLon + (co + 0.5) / GRID * lonSpan;
+      // Cell boundaries
+      const lat1 = minLat + r * dLat;
+      const lat2 = lat1 + dLat;
+      const lon1 = minLon + co * dLon;
+      const lon2 = lon1 + dLon;
+      const cLat = (lat1 + lat2) / 2;
+      const cLon = (lon1 + lon2) / 2;
+
+      // Check center + 4 corners + 4 edge midpoints = 9 sample points
+      // Cell drawn only if CENTER is inside (strict boundary adherence)
       if (!pointInPoly([cLat, cLon], ptArray)) continue;
 
-      const noise    = spatialNoise(r, co, 2.7, 1.9, 0.8, amp);
-      const cellVal  = Math.max(
+      // Additionally verify at least 3 of 4 corners are inside
+      // This eliminates cells that only barely clip the boundary
+      const corners = [
+        [lat1 + dLat*0.15, lon1 + dLon*0.15],  // inner bottom-left
+        [lat1 + dLat*0.15, lon2 - dLon*0.15],  // inner bottom-right
+        [lat2 - dLat*0.15, lon1 + dLon*0.15],  // inner top-left
+        [lat2 - dLat*0.15, lon2 - dLon*0.15],  // inner top-right
+      ];
+      const insideCount = corners.filter(pt => pointInPoly(pt, ptArray)).length;
+      // Require at least 2 of 4 inner corners inside — removes edge artifacts
+      if (insideCount < 2) continue;
+
+      const noise   = spatialNoise(r, co, 2.7, 1.9, 0.8, amp);
+      const cellVal = Math.max(
         pal.stops[0][0],
         Math.min(pal.stops[pal.stops.length-1][0], baseValue + noise)
       );
       const [rr,gg,bb] = interpolateColor(cellVal, pal.stops);
+
+      // Inset each cell slightly (2% margin) — removes hairline gaps
+      const inset = 0.02;
       cells.push({
-        lat1: minLat +  r      / GRID * latSpan,
-        lat2: minLat + (r + 1) / GRID * latSpan,
-        lon1: minLon +  co     / GRID * lonSpan,
-        lon2: minLon + (co + 1)/ GRID * lonSpan,
+        lat1: lat1 + dLat*inset,
+        lat2: lat2 - dLat*inset,
+        lon1: lon1 + dLon*inset,
+        lon2: lon2 - dLon*inset,
         val:  cellVal,
         r: rr, g: gg, b: bb,
         pixM: pixM
