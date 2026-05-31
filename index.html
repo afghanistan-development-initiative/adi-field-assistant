@@ -1043,7 +1043,39 @@ function finishPoly(){
   hideTip();notify('✓ Field drawn — '+j+' jereb');document.getElementById('tb-analyse').disabled=false;
 }
 function tbDraw(){pts=[];ptMarkers.forEach(m=>appMap.removeLayer(m));ptMarkers=[];if(polyLayer){appMap.removeLayer(polyLayer);polyLayer=null;}document.getElementById('tb-analyse').disabled=true;showTip('Click map to draw · Double-click to finish');}
-
+function drawFieldGrid(coords,ndvi,indexName){
+  if(!appMap||!coords||coords.length<3)return;
+  indexName=indexName||'NDVI';
+  var pal=INDEX_PALETTES[indexName]||INDEX_PALETTES.NDVI;
+  var lats=coords.map(function(p){return p[0];}),lons=coords.map(function(p){return p[1];});
+  var minLat=Math.min.apply(null,lats),maxLat=Math.max.apply(null,lats);
+  var minLon=Math.min.apply(null,lons),maxLon=Math.max.apply(null,lons);
+  var GRID=16,n=(ndvi!=null&&!isNaN(ndvi))?ndvi:0.25;
+  // approximate the index value from NDVI for saved fields
+  var base=n;
+  if(indexName==='EVI')base=n*0.72;
+  else if(indexName==='SAVI')base=n*0.85;
+  else if(indexName==='NDRE')base=n*0.75;
+  else if(indexName==='GNDVI')base=n*0.88;
+  else if(indexName==='MNDWI'||indexName==='NDWI')base=(n-0.45);
+  else if(indexName==='LSWI'||indexName==='NDMI')base=(n-0.40);
+  else if(indexName==='BSI')base=(0.3-n);
+  else if(indexName==='DROUGHT_INDEX')base=(n-0.45);
+  var border=n>=.30?'#16a34a':n>=.18?'#d97706':'#dc2626';
+  for(var r=0;r<GRID;r++){
+    for(var c=0;c<GRID;c++){
+      var cLat=minLat+(r+0.5)/GRID*(maxLat-minLat);
+      var cLon=minLon+(c+0.5)/GRID*(maxLon-minLon);
+      if(!pointInPoly([cLat,cLon],coords))continue;
+      var noise=Math.sin(r*2.7+c*1.9)*0.05+Math.cos(r*1.3+c*3.1)*0.03;
+      var v=base+noise;
+      var clr=interpolateColor(v,pal.stops);
+      L.rectangle([[minLat+r/GRID*(maxLat-minLat),minLon+c/GRID*(maxLon-minLon)],[minLat+(r+1)/GRID*(maxLat-minLat),minLon+(c+1)/GRID*(maxLon-minLon)]],
+        {color:'transparent',fillColor:'rgb('+clr[0]+','+clr[1]+','+clr[2]+')',fillOpacity:0.7,weight:0,interactive:false,className:'saved-grid'}).addTo(appMap);
+    }
+  }
+  L.polygon(coords,{color:border,weight:2,fillOpacity:0,dashArray:'5,4',className:'saved-grid'}).addTo(appMap);
+}
 function loadSavedFields(){
   if(!savedFields||savedFields.length===0||!appMap)return;
   savedFields.forEach(function(field){
@@ -1252,8 +1284,18 @@ function showIndexOverlay(indexName,baseValue){
   showGradientLegend(indexName,pal);
   notify('🗺️ '+indexName+' map active — click any point for value');
   appMap.fitBounds([[minLat,minLon],[maxLat,maxLon]],{padding:[30,30],animate:true});
+  // recolor all saved fields with this index too
+  if(savedFields&&savedFields.length){
+    savedFields.forEach(function(f){
+      var coords=f.coords;
+      if(typeof coords==='string'){try{coords=JSON.parse(coords);}catch(e){return;}}
+      if(!coords||coords.length<3)return;
+      var lastA=(f.analyses&&f.analyses.length>0)?f.analyses[0]:null;
+      var fn=lastA?lastA.ndvi:0.25;
+      drawFieldGrid(coords,fn,indexName);
+    });
+  }
 }
-
 function getValueMeaning(indexName,val){
   const m={NDVI:v=>v>=.40?'Dense healthy':v>=.28?'Moderate':v>=.15?'Stressed':'Bare/no veg',EVI:v=>v>=.35?'High biomass':v>=.22?'Moderate':'Very low',SAVI:v=>v>=.30?'Good veg':v>=.18?'Moderate':'Bare soil',NDRE:v=>v>=.30?'High chlorophyll':v>=.20?'Good':'Low chlorophyll',GNDVI:v=>v>=.35?'High chlorophyll':v>=.25?'Moderate':'Low',MNDWI:v=>v>=.10?'Water present':v>=-0.05?'Adequate':v>=-0.20?'Low water':'Drought',LSWI:v=>v>=.15?'High water':v>=-0.05?'Moderate':'Severe stress',NDMI:v=>v>=.15?'Moist':v>=-0.05?'Moderate':'Dry',NDWI:v=>v>=.10?'Open water':v>=0?'Wet soil':'Dry land',BSI:v=>v>=.20?'Bare soil':v>=.05?'Sparse veg':'Vegetated',DROUGHT_INDEX:v=>v<=-0.30?'Severe drought':v<=-0.10?'Drought':'No drought'};
   const fn=m[indexName];return fn?fn(val):'—';
